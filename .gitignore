@@ -1,0 +1,44 @@
+maven
+packages
+*.log
+target
+mvnw
+mvnw.cmd
+
+/.mvn
+/.idea
+./**/*.iml
+*/**/target
+*/**/.settings
+*/**/.project
+*/**/.classpath
+*/**/.mvn
+*/**/.idea
+*/**/publish
+*/**/node_modules
+*/**/dist-rollup
+*/**/out-tsc
+*/**/out
+
+!maven/config
+*.iml
+*.jar
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+.mvn
+*.iws
+*.iml
+*.ipr
+————————————————
+版权声明：本文为CSDN博主「你敞开了玩」的原创文章，遵循CC 4.0 BY-SA版权协议，转载请附上原文出处链接及本声明。
+原文链接：https://blog.csdn.net/weixin_39543881/article/details/122929452

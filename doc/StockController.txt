@@ -1,0 +1,194 @@
+库存管理接口文档
+
+1. 创建入库记录
+URL: POST /stock/in
+请求示例:
+{
+    "productId": 1,
+    "quantity": 100,
+    "unitPrice": 8.50,
+    "supplier": "山东苹果基地",
+    "stockDate": "2024-01-01",
+    "operatorId": 1,
+    "remark": "秋季采购入库"
+}
+返回成功示例:
+{
+    "code": "0",
+    "msg": "成功",
+    "data": {
+        "id": 1,
+        "productId": 1,
+        "quantity": 100,
+        "unitPrice": 8.50,
+        "totalPrice": 850.00,
+        "supplier": "山东苹果基地",
+        "stockDate": "2024-01-01",
+        "operatorId": 1,
+        "remark": "秋季采购入库",
+        "status": 1,
+        "createdAt": "2024-01-01 12:00:00",
+        "updatedAt": "2024-01-01 12:00:00"
+    }
+}
+
+2. 创建出库记录
+URL: POST /stock/out
+请求示例:
+{
+    "productId": 1,
+    "quantity": 50,
+    "unitPrice": 10.00,
+    "type": 1,
+    "customerName": "李四",
+    "orderNo": "SO2024010100001",
+    "operatorId": 1,
+    "remark": "销售出库"
+}
+返回成功示例:
+{
+    "code": "0",
+    "msg": "成功",
+    "data": {
+        "id": 1,
+        "productId": 1,
+        "quantity": 50,
+        "unitPrice": 10.00,
+        "totalPrice": 500.00,
+        "type": 1,
+        "customerName": "李四",
+        "orderNo": "SO2024010100001",
+        "operatorId": 1,
+        "remark": "销售出库",
+        "status": 1,
+        "createdAt": "2024-01-01 12:00:00",
+        "updatedAt": "2024-01-01 12:00:00"
+    }
+}
+
+3. 获取入库记录列表
+URL: GET /stock/in/list?productId=1&supplier=山东&status=1&currentPage=1&size=10
+返回成功示例:
+{
+    "code": "0",
+    "msg": "成功",
+    "data": {
+        "records": [
+            {
+                "id": 1,
+                "productId": 1,
+                "quantity": 100,
+                "unitPrice": 8.50,
+                "totalPrice": 850.00,
+                "supplier": "山东苹果基地",
+                "stockDate": "2024-01-01",
+                "operatorId": 1,
+                "status": 1,
+                "product": {
+                    "id": 1,
+                    "name": "红富士苹果",
+                    "price": 12.00
+                },
+                "operator": {
+                    "id": 1,
+                    "name": "张三"
+                }
+            }
+        ],
+        "total": 1,
+        "size": 10,
+        "current": 1,
+        "pages": 1
+    }
+}
+
+4. 获取出库记录列表
+URL: GET /stock/out/list?productId=1&type=1&status=1&currentPage=1&size=10
+返回成功示例:
+{
+    "code": "0",
+    "msg": "成功",
+    "data": {
+        "records": [
+            {
+                "id": 1,
+                "productId": 1,
+                "quantity": 50,
+                "unitPrice": 10.00,
+                "totalPrice": 500.00,
+                "type": 1,
+                "customerName": "李四",
+                "orderNo": "SO2024010100001",
+                "operatorId": 1,
+                "status": 1,
+                "product": {
+                    "id": 1,
+                    "name": "红富士苹果",
+                    "price": 12.00
+                },
+                "operator": {
+                    "id": 1,
+                    "name": "张三"
+                }
+            }
+        ],
+        "total": 1,
+        "size": 10,
+        "current": 1,
+        "pages": 1
+    }
+}
+
+5. 作废入库记录
+URL: PUT /stock/in/{id}/invalidate
+返回成功示例:
+{
+    "code": "0",
+    "msg": "成功",
+    "data": null
+}
+
+6. 作废出库记录
+URL: PUT /stock/out/{id}/invalidate
+返回成功示例:
+{
+    "code": "0",
+    "msg": "成功",
+    "data": null
+}
+
+参数说明：
+1. 入库记录参数
+- productId: 商品ID（必填）
+- quantity: 入库数量（必填，必须大于0）
+- unitPrice: 单价（必填，必须大于0）
+- supplier: 供应商（选填）
+- stockDate: 入库日期（必填，格式：yyyy-MM-dd）
+- operatorId: 操作人ID（必填）
+- remark: 备注（选填）
+
+2. 出库记录参数
+- productId: 商品ID（必填）
+- quantity: 出库数量（必填，必须大于0）
+- unitPrice: 单价（必填，必须大于0）
+- type: 出库类型（必填，1-销售出库,2-损耗出库,3-其他出库）
+- customerName: 客户姓名（选填）
+- orderNo: 订单号（选填）
+- operatorId: 操作人ID（必填）
+- remark: 备注（选填）
+
+3. 查询参数
+- productId: 商品ID（选填）
+- supplier: 供应商名称，支持模糊查询（入库记录查询专用，选填）
+- type: 出库类型（出库记录查询专用，选填）
+- status: 记录状态（选填，0-作废,1-正常）
+- operatorId: 操作人ID（选填）
+- currentPage: 当前页码（选填，默认1）
+- size: 每页记录数（选填，默认10）
+
+注意事项：
+1. 入库操作会自动增加商品库存
+2. 出库操作会自动减少商品库存，且会检查库存是否充足
+3. 作废操作会自动回滚库存变更
+4. 所有金额相关的字段使用两位小数
+5. 创建记录时totalPrice由系统自动计算，无需传入 
