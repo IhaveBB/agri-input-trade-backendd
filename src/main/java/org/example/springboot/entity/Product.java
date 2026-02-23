@@ -3,6 +3,7 @@ package org.example.springboot.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -11,6 +12,8 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
+import java.util.List;
+import java.util.Map;
 
 @Data
 @Schema(description = "商品实体")
@@ -36,8 +39,9 @@ public class Product {
     @Schema(description = "库存数量")
     private Integer stock;
 
-    @Schema(description = "是否开启折扣")
+    @Schema(description = "是否开启折扣：0-否，1-是")
     private Integer isDiscount;
+
     @Schema(description = "折扣价格")
     private BigDecimal discountPrice;
 
@@ -61,11 +65,22 @@ public class Product {
     @Schema(description = "产地")
     private String placeOfOrigin;
 
+    /**
+     * 扩展属性（JSON格式存储）
+     * 存储不同分类的动态属性，如：品牌、种子类别、品种名称等
+     */
+    @Schema(description = "扩展属性（JSON格式）")
+    private String extraAttributes;
+
     @Schema(description = "创建时间")
     private Timestamp createdAt;
 
     @Schema(description = "更新时间")
     private Timestamp updatedAt;
+
+    @TableLogic
+    @Schema(description = "是否删除")
+    private Integer deleted;
 
     @TableField(exist = false)
     @Schema(description = "分类信息")

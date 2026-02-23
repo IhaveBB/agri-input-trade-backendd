@@ -1,7 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(mvn compile:*)"
+      "Bash(mvn compile:*)",
+      "Bash(curl -s:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd //c \"taskkill:*)",
+      "Bash(cmd //c:*)"
     ]
   }
 }

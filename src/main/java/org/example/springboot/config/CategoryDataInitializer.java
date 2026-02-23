@@ -244,6 +244,61 @@ public class CategoryDataInitializer implements CommandLineRunner {
         Category potashFertilizer = createCategory(id++, "钾肥", singleFertilizer.getId(), 3, 3, 0, 0);
         categories.add(potashFertilizer);
 
+        // ===== 四级分类 - 种子 -> 具体作物品种 =====
+        // 谷物类 -> 具体作物
+        Category rice = createCategory(id++, "水稻", cereal.getId(), 4, 1, 0, 0);
+        categories.add(rice);
+        Category wheat = createCategory(id++, "小麦", cereal.getId(), 4, 2, 0, 0);
+        categories.add(wheat);
+        Category corn = createCategory(id++, "玉米", cereal.getId(), 4, 3, 0, 0);
+        categories.add(corn);
+        Category millet = createCategory(id++, "谷子", cereal.getId(), 4, 4, 0, 0);
+        categories.add(millet);
+
+        // 杂粮类 -> 具体作物
+        Category sorghum = createCategory(id++, "高粱", coarseGrain.getId(), 4, 1, 0, 0);
+        categories.add(sorghum);
+        Category buckwheat = createCategory(id++, "荞麦", coarseGrain.getId(), 4, 2, 0, 0);
+        categories.add(buckwheat);
+
+        // 豆类作物 -> 具体作物
+        Category soybean = createCategory(id++, "大豆", legume.getId(), 4, 1, 0, 0);
+        categories.add(soybean);
+        Category pea = createCategory(id++, "豌豆", legume.getId(), 4, 2, 0, 0);
+        categories.add(pea);
+
+        // 叶菜类 -> 具体作物
+        Category cabbage = createCategory(id++, "白菜", leafyVegetable.getId(), 4, 1, 0, 0);
+        categories.add(cabbage);
+        Category lettuce = createCategory(id++, "生菜", leafyVegetable.getId(), 4, 2, 0, 0);
+        categories.add(lettuce);
+        Category spinach = createCategory(id++, "菠菜", leafyVegetable.getId(), 4, 3, 0, 0);
+        categories.add(spinach);
+
+        // 根茎类 -> 具体作物
+        Category carrot = createCategory(id++, "胡萝卜", rootVegetable.getId(), 4, 1, 0, 0);
+        categories.add(carrot);
+        Category radish = createCategory(id++, "萝卜", rootVegetable.getId(), 4, 2, 0, 0);
+        categories.add(radish);
+        Category potato = createCategory(id++, "土豆", rootVegetable.getId(), 4, 3, 0, 0);
+        categories.add(potato);
+
+        // 茄果类 -> 具体作物
+        Category tomato = createCategory(id++, "番茄", solanaceous.getId(), 4, 1, 0, 0);
+        categories.add(tomato);
+        Category eggplant = createCategory(id++, "茄子", solanaceous.getId(), 4, 2, 0, 0);
+        categories.add(eggplant);
+        Category pepper = createCategory(id++, "辣椒", solanaceous.getId(), 4, 3, 0, 0);
+        categories.add(pepper);
+
+        // 瓜类 -> 具体作物
+        Category cucumber = createCategory(id++, "黄瓜", gourd.getId(), 4, 1, 0, 0);
+        categories.add(cucumber);
+        Category melon = createCategory(id++, "西瓜", gourd.getId(), 4, 2, 0, 0);
+        categories.add(melon);
+        Category pumpkin = createCategory(id++, "南瓜", gourd.getId(), 4, 3, 0, 0);
+        categories.add(pumpkin);
+
         return categories;
     }
 

@@ -100,6 +100,14 @@ public class CategoryService {
                 return Result.error("-1", "分类不存在");
             }
 
+            // 检查是否试图修改层级（parentId 或 level）
+            if (category.getParentId() != null && !category.getParentId().equals(existing.getParentId())) {
+                return Result.error("-1", "不允许修改分类层级");
+            }
+            if (category.getLevel() != null && !category.getLevel().equals(existing.getLevel())) {
+                return Result.error("-1", "不允许修改分类层级");
+            }
+
             // 如果修改了名称，检查同级是否重复
             if (category.getName() != null && !category.getName().equals(existing.getName())) {
                 Long parentId = existing.getParentId();
@@ -194,12 +202,15 @@ public class CategoryService {
         if (name != null && !name.isEmpty()) {
             queryWrapper.like(Category::getName, name);
         }
-        if (parentId != null) {
+
+        // 如果只传了level没传parentId，按level查询；否则按parentId查询
+        // 这样可以查询某个层级的所有分类
+        if (level != null && parentId == null) {
+            queryWrapper.eq(Category::getLevel, level);
+        } else if (parentId != null) {
             queryWrapper.eq(Category::getParentId, parentId);
         }
-        if (level != null) {
-            queryWrapper.eq(Category::getLevel, level);
-        }
+
         if (status != null) {
             queryWrapper.eq(Category::getStatus, status);
         }

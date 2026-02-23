@@ -4,7 +4,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.Product;
+import org.example.springboot.entity.dto.ProductCreateDTO;
+import org.example.springboot.entity.vo.ExtFieldConfigVO;
+import org.example.springboot.entity.vo.ProductVO;
 import org.example.springboot.enumClass.UserRole;
+import org.example.springboot.service.ProductExtService;
 import org.example.springboot.service.ProductService;
 import org.example.springboot.util.UserContext;
 import org.slf4j.Logger;
@@ -23,7 +27,10 @@ public class ProductController {
     @Autowired
     private ProductService productService;
 
-    @Operation(summary = "创建商品")
+    @Autowired
+    private ProductExtService productExtService;
+
+    @Operation(summary = "创建商品（基础版）")
     @PostMapping
     public Result<?> createProduct(@RequestBody Product product) {
         Long userId = UserContext.getUserId();
@@ -44,7 +51,24 @@ public class ProductController {
         return productService.createProduct(product);
     }
 
-    @Operation(summary = "更新商品信息")
+    @Operation(summary = "创建商品（含扩展信息）")
+    @PostMapping("/ext")
+    public Result<ProductVO> createProductWithExt(@RequestBody ProductCreateDTO dto) {
+        Long userId = UserContext.getUserId();
+        String role = UserContext.getRole();
+
+        if (userId == null) {
+            return Result.error("-1", "用户未登录");
+        }
+
+        if (!UserRole.isMerchant(role) && !UserRole.isAdmin(role)) {
+            return Result.error("-1", "无权限创建商品，只有商户或管理员可以创建");
+        }
+
+        return productExtService.createProduct(dto, userId);
+    }
+
+    @Operation(summary = "更新商品信息（基础版）")
     @PutMapping("/{id}")
     public Result<?> updateProduct(@PathVariable Long id, @RequestBody Product product) {
         Long userId = UserContext.getUserId();
@@ -54,24 +78,59 @@ public class ProductController {
             return Result.error("-1", "用户未登录");
         }
 
-        // 获取商品信息
         Product existingProduct = productService.getProductByIdValue(id);
         if (existingProduct == null) {
             return Result.error("-1", "商品不存在");
         }
 
-        // 权限检查
         if (UserRole.isUser(role)) {
             return Result.error("-1", "无权限修改商品");
         } else if (UserRole.isMerchant(role)) {
-            // 商户只能修改自己店铺的商品
             if (!existingProduct.getMerchantId().equals(userId)) {
                 return Result.error("-1", "无权限修改其他商户的商品");
             }
         }
-        // 管理员可以修改任何商品
 
         return productService.updateProduct(id, product);
+    }
+
+    @Operation(summary = "更新商品信息（含扩展信息）")
+    @PutMapping("/ext/{id}")
+    public Result<ProductVO> updateProductWithExt(@PathVariable Long id, @RequestBody ProductCreateDTO dto) {
+        Long userId = UserContext.getUserId();
+        String role = UserContext.getRole();
+
+        if (userId == null) {
+            return Result.error("-1", "用户未登录");
+        }
+
+        Product existingProduct = productService.getProductByIdValue(id);
+        if (existingProduct == null) {
+            return Result.error("-1", "商品不存在");
+        }
+
+        if (UserRole.isUser(role)) {
+            return Result.error("-1", "无权限修改商品");
+        } else if (UserRole.isMerchant(role)) {
+            if (!existingProduct.getMerchantId().equals(userId)) {
+                return Result.error("-1", "无权限修改其他商户的商品");
+            }
+        }
+
+        return productExtService.updateProduct(id, dto);
+    }
+
+    @Operation(summary = "获取商品详情（含扩展信息）")
+    @GetMapping("/ext/{id}")
+    public Result<ProductVO> getProductWithExt(@PathVariable Long id) {
+        return productExtService.getProductWithExt(id);
+    }
+
+    @Operation(summary = "获取分类扩展字段配置")
+    @GetMapping("/ext/fields")
+    public Result<List<ExtFieldConfigVO>> getExtFieldsByCategory(
+            @RequestParam(required = false) Long categoryId) {
+        return productExtService.getExtFieldsByCategory(categoryId);
     }
 
     @Operation(summary = "删除商品")
