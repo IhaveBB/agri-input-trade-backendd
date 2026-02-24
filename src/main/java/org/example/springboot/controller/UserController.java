@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.User;
 import org.example.springboot.entity.UserPasswordUpdate;
+import org.example.springboot.entity.dto.UserLocationDTO;
 import org.example.springboot.enumClass.UserRole;
 import org.example.springboot.service.UserService;
 import org.example.springboot.util.UserContext;
@@ -99,6 +100,21 @@ public class UserController {
             return Result.success();
         } else {
             return Result.error("-1", "忘记密码操作失败");
+        }
+    }
+
+    @Operation(summary = "更新用户位置")
+    @PutMapping("/location")
+    public Result<?> updateLocation(@RequestBody UserLocationDTO userLocationDTO) {
+        Long currentUserId = UserContext.getUserId();
+        if (currentUserId == null) {
+            return Result.error("-1", "用户未登录");
+        }
+        boolean success = userService.updateUserLocation(currentUserId, userLocationDTO.getLocation());
+        if (success) {
+            return Result.success();
+        } else {
+            return Result.error("-1", "更新位置失败");
         }
     }
 

@@ -116,6 +116,15 @@ private FavoriteMapper favoriteMapper;
         return false;
     }
 
+    public boolean updateUserLocation(Long userId, String location) {
+        User user = userMapper.selectById(userId);
+        if (user != null) {
+            user.setLocation(location);
+            return userMapper.updateById(user) > 0;
+        }
+        return false;
+    }
+
     public boolean updatePassword(int id, UserPasswordUpdate userPasswordUpdate) {
         User oldUser = userMapper.selectById(id);
         if (oldUser != null &&bCryptPasswordEncoder.matches(userPasswordUpdate.getOldPassword(),oldUser.getPassword())) {

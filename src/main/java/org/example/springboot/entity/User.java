@@ -37,6 +37,9 @@ public class User {
     @Schema(description = "营业执照URL")
     private String businessLicense;
 
+    @Schema(description = "位置信息")
+    private String location;
+
     @Schema(description = "创建时间")
     private Timestamp createdAt;
 

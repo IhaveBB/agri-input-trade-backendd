@@ -2,246 +2,571 @@ package org.example.springboot.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.example.springboot.common.Result;
+import org.example.springboot.config.RecommendLocationConfig;
 import org.example.springboot.entity.Product;
 import org.example.springboot.entity.Order;
 import org.example.springboot.entity.Favorite;
+import org.example.springboot.entity.User;
+import org.example.springboot.enumClass.RecommendConstants;
+import org.example.springboot.enumClass.RecommendConstants.LocationLevel;
 import org.example.springboot.mapper.OrderMapper;
 import org.example.springboot.mapper.FavoriteMapper;
 import org.example.springboot.mapper.ProductMapper;
+import org.example.springboot.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * 推荐服务实现类
+ * 使用基于用户的协同过滤算法，结合地理位置权重
+ */
 @Service
 public class RecommendService {
+
     private static final Logger LOGGER = LoggerFactory.getLogger(RecommendService.class);
 
     @Autowired
     private OrderMapper orderMapper;
-    
+
     @Autowired
     private FavoriteMapper favoriteMapper;
-    
+
     @Autowired
     private ProductMapper productMapper;
 
-    // 计算用户相似度矩阵
-    private Map<Long, Map<Long, Double>> calculateUserSimilarity() {
-        // 构建用户-商品行为矩阵
-        Map<Long, Set<Long>> userProductMap = new HashMap<>();
-        
-        // 获取所有订单数据（已完成的订单）
+    @Autowired
+    private UserMapper userMapper;
+
+    @Autowired
+    private RecommendLocationConfig locationConfig;
+
+    /**
+     * 用户位置信息缓存
+     */
+    private final Map<Long, UserLocationInfo> userLocationCache = new HashMap<>();
+
+    /**
+     * 用户行为评分矩阵缓存
+     */
+    private Map<Long, Map<Long, Double>> userRatingMatrix;
+
+    /**
+     * 用户平均评分缓存
+     */
+    private Map<Long, Double> userMeanRatingCache;
+
+    /**
+     * 用户位置信息封装类
+     */
+    private static class UserLocationInfo {
+        private final String province;
+        private final String city;
+        private final String region;
+
+        UserLocationInfo(String location) {
+            if (location == null || location.isEmpty()) {
+                this.province = null;
+                this.city = null;
+                this.region = null;
+                return;
+            }
+            // 格式：省-市 或 省-市-区
+            String[] parts = location.split("-");
+            this.province = parts.length >= 1 ? parts[0].trim() : null;
+            this.city = parts.length >= 2 ? parts[1].trim() : null;
+            this.region = this.province != null ? RecommendConstants.PROVINCE_REGION_MAP.get(this.province) : null;
+        }
+
+        public String getProvince() {
+            return province;
+        }
+
+        public String getCity() {
+            return city;
+        }
+
+        public String getRegion() {
+            return region;
+        }
+    }
+
+    /**
+     * 初始化时加载缓存
+     */
+    @PostConstruct
+    public void init() {
+        refreshLocationCache();
+        buildRatingMatrix();
+    }
+
+    /**
+     * 刷新用户位置缓存
+     */
+    public void refreshLocationCache() {
+        List<User> users = userMapper.selectList(null);
+        userLocationCache.clear();
+        for (User user : users) {
+            if (user.getLocation() != null && !user.getLocation().isEmpty()) {
+                userLocationCache.put(user.getId(), new UserLocationInfo(user.getLocation()));
+            }
+        }
+        LOGGER.info("[推荐服务] 用户位置缓存已刷新，共 {} 条记录", userLocationCache.size());
+    }
+
+    /**
+     * 构建用户-商品评分矩阵
+     * 购买行为权重: 2.0, 收藏行为权重: 1.0
+     */
+    private void buildRatingMatrix() {
+        userRatingMatrix = new HashMap<>(64);
+        userMeanRatingCache = new HashMap<>(64);
+
+        // 获取已完成订单
         LambdaQueryWrapper<Order> orderWrapper = new LambdaQueryWrapper<>();
-        orderWrapper.eq(Order::getStatus, 3); // 已完成状态
+        orderWrapper.eq(Order::getStatus, 3);
         List<Order> orders = orderMapper.selectList(orderWrapper);
-        
-        // 获取所有收藏数据（有效的收藏）
+
+        // 获取有效收藏
         LambdaQueryWrapper<Favorite> favoriteWrapper = new LambdaQueryWrapper<>();
-        favoriteWrapper.eq(Favorite::getStatus, 1); // 收藏状态为1
+        favoriteWrapper.eq(Favorite::getStatus, 1);
         List<Favorite> favorites = favoriteMapper.selectList(favoriteWrapper);
 
-        // 构建用户-商品映射，购买行为权重为2，收藏行为权重为1
+        // 构建评分矩阵：用户 -> 商品 -> 评分
         for (Order order : orders) {
-            Set<Long> products = userProductMap.computeIfAbsent(order.getUserId(), k -> new HashSet<>());
-            products.add(order.getProductId());
-            products.add(order.getProductId()); // 添加两次表示更高权重
-        }
-        
-        for (Favorite favorite : favorites) {
-            userProductMap.computeIfAbsent(favorite.getUserId(), k -> new HashSet<>())
-                         .add(favorite.getProductId());
+            Map<Long, Double> userRatings = userRatingMatrix.computeIfAbsent(order.getUserId(), k -> new HashMap<>());
+            // 购买行为权重为2.0
+            userRatings.merge(order.getProductId(), RecommendConstants.BehaviorWeight.PURCHASE, Double::sum);
         }
 
-        // 计算用户相似度
-        Map<Long, Map<Long, Double>> similarityMatrix = new HashMap<>();
-        List<Long> userIds = new ArrayList<>(userProductMap.keySet());
+        for (Favorite favorite : favorites) {
+            Map<Long, Double> userRatings = userRatingMatrix.computeIfAbsent(favorite.getUserId(), k -> new HashMap<>());
+            // 收藏行为权重为1.0
+            userRatings.merge(favorite.getProductId(), RecommendConstants.BehaviorWeight.FAVORITE, Double::sum);
+        }
+
+        // 计算每个用户的平均评分
+        for (Map.Entry<Long, Map<Long, Double>> entry : userRatingMatrix.entrySet()) {
+            Long userId = entry.getKey();
+            Map<Long, Double> ratings = entry.getValue();
+            double meanRating = ratings.values().stream()
+                    .mapToDouble(Double::doubleValue)
+                    .average()
+                    .orElse(0.0);
+            userMeanRatingCache.put(userId, meanRating);
+        }
+
+        LOGGER.info("[推荐服务] 用户评分矩阵已构建，共 {} 个用户", userRatingMatrix.size());
+    }
+
+    /**
+     * 获取用户位置信息
+     */
+    private UserLocationInfo getUserLocation(Long userId) {
+        return userLocationCache.get(userId);
+    }
+
+    /**
+     * 计算两个用户的位置权重
+     *
+     * @param userId1 用户1ID
+     * @param userId2 用户2ID
+     * @return 位置权重因子
+     */
+    private double calculateLocationWeight(Long userId1, Long userId2) {
+        UserLocationInfo loc1 = getUserLocation(userId1);
+        UserLocationInfo loc2 = getUserLocation(userId2);
+
+        // 任一用户无位置信息，返回默认值
+        if (loc1 == null || loc2 == null || loc1.getProvince() == null || loc2.getProvince() == null) {
+            return locationConfig.getDefaultWeight();
+        }
+
+        LocationLevel level = getLocationMatchLevel(loc1, loc2);
+        switch (level) {
+            case SAME_CITY:
+                LOGGER.debug("[推荐服务] 用户{}和{}同市，权重: {}", userId1, userId2, locationConfig.getSameCity());
+                return locationConfig.getSameCity();
+            case SAME_PROVINCE:
+                LOGGER.debug("[推荐服务] 用户{}和{}同省，权重: {}", userId1, userId2, locationConfig.getSameProvince());
+                return locationConfig.getSameProvince();
+            case SAME_REGION:
+                LOGGER.debug("[推荐服务] 用户{}和{}同区域，权重: {}", userId1, userId2, locationConfig.getSameRegion());
+                return locationConfig.getSameRegion();
+            default:
+                return locationConfig.getDefaultWeight();
+        }
+    }
+
+    /**
+     * 获取位置匹配级别
+     */
+    private LocationLevel getLocationMatchLevel(UserLocationInfo loc1, UserLocationInfo loc2) {
+        // 同市判断
+        if (loc1.getCity() != null && loc2.getCity() != null
+                && loc1.getCity().equals(loc2.getCity())) {
+            return LocationLevel.SAME_CITY;
+        }
+        // 同省判断
+        if (loc1.getProvince().equals(loc2.getProvince())) {
+            return LocationLevel.SAME_PROVINCE;
+        }
+        // 同区域判断
+        if (loc1.getRegion() != null && loc2.getRegion() != null
+                && loc1.getRegion().equals(loc2.getRegion())) {
+            return LocationLevel.SAME_REGION;
+        }
+        return LocationLevel.DIFFERENT_REGION;
+    }
+
+    /**
+     * 计算用户相似度矩阵
+     */
+    private Map<Long, Map<Long, Double>> calculateUserSimilarity() {
+        // 刷新缓存
+        refreshLocationCache();
+        buildRatingMatrix();
+
+        Map<Long, Map<Long, Double>> similarityMatrix = new HashMap<>(64);
+        List<Long> userIds = new ArrayList<>(userRatingMatrix.keySet());
 
         for (int i = 0; i < userIds.size(); i++) {
             Long user1 = userIds.get(i);
-            Map<Long, Double> userSimilarities = new HashMap<>();
+            Map<Long, Double> userSimilarities = new HashMap<>(16);
             similarityMatrix.put(user1, userSimilarities);
 
             for (int j = i + 1; j < userIds.size(); j++) {
                 Long user2 = userIds.get(j);
-                double similarity = calculateCosineSimilarity(
-                    userProductMap.get(user1), 
-                    userProductMap.get(user2)
-                );
-                userSimilarities.put(user2, similarity);
-                similarityMatrix.computeIfAbsent(user2, k -> new HashMap<>())
-                               .put(user1, similarity);
+
+                // 行为相似度（皮尔逊相关系数）
+                double behaviorSimilarity = calculatePearsonCorrelation(user1, user2);
+
+                // 皮尔逊相关系数可能为负，负相似度表示偏好相反，不参与推荐
+                // 只有正相似度才乘以位置权重
+                double locationWeight = calculateLocationWeight(user1, user2);
+                double finalSimilarity = behaviorSimilarity > 0
+                        ? behaviorSimilarity * locationWeight
+                        : 0.0;
+
+                userSimilarities.put(user2, finalSimilarity);
+                similarityMatrix.computeIfAbsent(user2, k -> new HashMap<>(16))
+                               .put(user1, finalSimilarity);
             }
         }
 
         return similarityMatrix;
     }
 
-    // 计算余弦相似度
-    private double calculateCosineSimilarity(Set<Long> set1, Set<Long> set2) {
-        if (set1 == null || set2 == null || set1.isEmpty() || set2.isEmpty()) {
+    /**
+     * 计算皮尔逊相关系数
+     *
+     * 公式：r = Σ((xi - x̄)(yi - ȳ)) / (√Σ(xi - x̄)² × √Σ(yi - ȳ)²)
+     *
+     * 优点：消除用户评分偏好的影响
+     * 例如：用户A给所有商品打4-5分，用户B给所有商品打1-2分
+     *      余弦相似度可能很低，但皮尔逊相关系数很高（趋势一致）
+     */
+    private double calculatePearsonCorrelation(Long userId1, Long userId2) {
+        Map<Long, Double> ratings1 = userRatingMatrix.get(userId1);
+        Map<Long, Double> ratings2 = userRatingMatrix.get(userId2);
+
+        if (ratings1 == null || ratings2 == null || ratings1.isEmpty() || ratings2.isEmpty()) {
             return 0.0;
         }
 
-        // 计算交集
-        Set<Long> intersection = new HashSet<>(set1);
-        intersection.retainAll(set2);
+        // 获取用户平均评分
+        Double mean1 = userMeanRatingCache.get(userId1);
+        Double mean2 = userMeanRatingCache.get(userId2);
 
-        // 添加最小阈值
-        if (intersection.isEmpty()) {
+        if (mean1 == null || mean2 == null) {
             return 0.0;
         }
 
-        // 计算余弦相似度 - 交集大小作为点积，除以两个集合大小的平方根乘积
-        double numerator = intersection.size();
-        double denominator = Math.sqrt(set1.size()) * Math.sqrt(set2.size());
-        double similarity = numerator / denominator;
-        
-        LOGGER.debug("计算相似度: set1={}, set2={}, similarity={}", set1, set2, similarity);
-        return similarity;
+        // 找共同商品
+        Set<Long> commonProducts = new HashSet<>(ratings1.keySet());
+        commonProducts.retainAll(ratings2.keySet());
+
+        int commonCount = commonProducts.size();
+        // 共同商品太少，相似度不可靠
+        if (commonCount < RecommendConstants.SimilarityThreshold.MIN_COMMON_ITEMS) {
+            LOGGER.debug("[推荐服务] 用户{}和{}共同商品数{} < 最小阈值{}，返回0",
+                    userId1, userId2, commonCount, RecommendConstants.SimilarityThreshold.MIN_COMMON_ITEMS);
+            return 0.0;
+        }
+
+        // 计算皮尔逊公式的分子和分母
+        double numerator = 0.0;  // Σ((xi - x̄)(yi - ȳ))
+        double sumSq1 = 0.0;     // Σ(xi - x̄)²
+        double sumSq2 = 0.0;     // Σ(yi - ȳ)²
+
+        for (Long productId : commonProducts) {
+            double diff1 = ratings1.get(productId) - mean1;
+            double diff2 = ratings2.get(productId) - mean2;
+
+            numerator += diff1 * diff2;
+            sumSq1 += diff1 * diff1;
+            sumSq2 += diff2 * diff2;
+        }
+
+        double denominator = Math.sqrt(sumSq1) * Math.sqrt(sumSq2);
+
+        // 分母为0，说明该用户评分都相同，无意义
+        if (denominator == 0) {
+            return 0.0;
+        }
+
+        double correlation = numerator / denominator;
+
+        LOGGER.debug("[推荐服务] 用户{}和{}的皮尔逊相关系数: {}, 共同商品: {}",
+                userId1, userId2, correlation, commonCount);
+
+        return correlation;
     }
 
-    // 为指定用户生成推荐
+    /**
+     * 为指定用户生成推荐
+     *
+     * @param userId 用户ID
+     * @return 推荐结果
+     */
     public Result<?> generateRecommendations(Long userId) {
         try {
-            // 获取用户的订单和收藏数据
-            LambdaQueryWrapper<Order> orderWrapper = new LambdaQueryWrapper<>();
-            orderWrapper.eq(Order::getUserId, userId)
-                       .eq(Order::getStatus, 3); // 已完成的订单
-            List<Order> userOrders = orderMapper.selectList(orderWrapper);
+            // 刷新缓存
+            refreshLocationCache();
+            buildRatingMatrix();
 
-            LambdaQueryWrapper<Favorite> favoriteWrapper = new LambdaQueryWrapper<>();
-            favoriteWrapper.eq(Favorite::getUserId, userId)
-                          .eq(Favorite::getStatus, 1); // 有效的收藏
-            List<Favorite> userFavorites = favoriteMapper.selectList(favoriteWrapper);
+            // 获取当前用户位置信息
+            UserLocationInfo currentUserLoc = getUserLocation(userId);
+            LOGGER.info("[推荐服务] 用户{}的位置信息: {}",
+                    userId,
+                    currentUserLoc != null ? currentUserLoc.getProvince() + "-" + currentUserLoc.getCity() : "无");
 
-            // 获取用户的商品集合
-            Set<Long> userProducts = new HashSet<>();
-            userOrders.forEach(order -> userProducts.add(order.getProductId()));
-            userFavorites.forEach(favorite -> userProducts.add(favorite.getProductId()));
-
-            if (userProducts.isEmpty()) {
-                LOGGER.warn("用户 {} 没有任何订单或收藏记录", userId);
-            }
-
-            // 获取用户相似度矩阵
-            Map<Long, Map<Long, Double>> similarityMatrix = calculateUserSimilarity();
+            // 获取用户已购买/收藏的商品及评分
+            Map<Long, Double> userRatings = getUserRatings(userId);
 
             // 获取相似用户
-            Map<Long, Double> similarUsers = new HashMap<>();
-            // 获取当前用户与其他用户的相似度
-            if (similarityMatrix.containsKey(userId)) {
-                similarUsers.putAll(similarityMatrix.get(userId));
-            }
-            // 获取其他用户与当前用户的相似度
-            for (Map.Entry<Long, Map<Long, Double>> entry : similarityMatrix.entrySet()) {
-                if (entry.getValue().containsKey(userId)) {
-                    similarUsers.put(entry.getKey(), entry.getValue().get(userId));
-                }
-            }
+            Map<Long, Double> similarUsers = findSimilarUsers(userId, userRatings);
 
-            // 动态调整相似度阈值
-            double similarityThreshold;
-            if (userProducts.size() < 3) { // 新用户
-                similarityThreshold = 0.2;
-            } else if (userProducts.size() > 10) { // 活跃用户
-                similarityThreshold = 0.4;
-            } else {
-                similarityThreshold = 0.3;
-            }
+            // 打印相似用户信息
+            logSimilarUsers(similarUsers);
 
-            // 过滤和排序相似用户
-            similarUsers = similarUsers.entrySet()
-                .stream()
-                .filter(entry -> entry.getValue() >= similarityThreshold)
-                .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
-                .limit(10)
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-
-            // 收集推荐商品及其得分
-            Map<Long, Double> productScores = new HashMap<>();
-            for (Map.Entry<Long, Double> entry : similarUsers.entrySet()) {
-                Long similarUserId = entry.getKey();
-                double similarity = entry.getValue();
-
-                // 获取相似用户的订单和收藏
-                List<Order> similarUserOrders = orderMapper.selectList(
-                    new LambdaQueryWrapper<Order>()
-                        .eq(Order::getUserId, similarUserId)
-                        .eq(Order::getStatus, 3)
-                );
-                
-                List<Favorite> similarUserFavorites = favoriteMapper.selectList(
-                    new LambdaQueryWrapper<Favorite>()
-                        .eq(Favorite::getUserId, similarUserId)
-                        .eq(Favorite::getStatus, 1)
-                );
-
-                // 计算推荐分数（订单权重2，收藏权重1）
-                for (Order order : similarUserOrders) {
-                    if (!userProducts.contains(order.getProductId())) {
-                        productScores.merge(order.getProductId(), similarity * 2, Double::sum);
-                    }
-                }
-                
-                for (Favorite favorite : similarUserFavorites) {
-                    if (!userProducts.contains(favorite.getProductId())) {
-                        productScores.merge(favorite.getProductId(), similarity, Double::sum);
-                    }
-                }
-            }
-
-            List<Product> recommendations;
-            if (productScores.isEmpty()) {
-                LOGGER.info("没有找到相似用户，使用基于销量的推荐");
-                recommendations = productMapper.selectList(
-                    new LambdaQueryWrapper<Product>()
-                        .orderByDesc(Product::getSalesCount)
-                        .last("LIMIT 12")
-                );
-            } else {
-                List<Map.Entry<Long, Double>> sortedProducts = new ArrayList<>(productScores.entrySet());
-                sortedProducts.sort((e1, e2) -> e2.getValue().compareTo(e1.getValue()));
-
-                List<Long> recommendedIds = sortedProducts.stream()
-                    .limit(12)
-                    .map(Map.Entry::getKey)
-                    .collect(Collectors.toList());
-
-                recommendations = productMapper.selectList(
-                    new LambdaQueryWrapper<Product>()
-                        .in(Product::getId, recommendedIds)
-                );
-            }
+            // 收集推荐商品
+            List<Product> recommendations = getRecommendedProducts(userId, userRatings, similarUsers);
 
             return Result.success(recommendations);
         } catch (Exception e) {
-            LOGGER.error("生成推荐失败: {}", e.getMessage());
+            LOGGER.error("[推荐服务] 生成推荐失败: {}", e.getMessage(), e);
             return Result.error("-1", "生成推荐失败: " + e.getMessage());
         }
     }
 
-    // 定时更新推荐
+    /**
+     * 获取用户评分
+     */
+    private Map<Long, Double> getUserRatings(Long userId) {
+        Map<Long, Double> userRatings = userRatingMatrix.get(userId);
+        if (userRatings == null) {
+            userRatings = new HashMap<>();
+            // 从数据库加载
+            LambdaQueryWrapper<Order> orderWrapper = new LambdaQueryWrapper<>();
+            orderWrapper.eq(Order::getUserId, userId).eq(Order::getStatus, 3);
+            List<Order> userOrders = orderMapper.selectList(orderWrapper);
+
+            LambdaQueryWrapper<Favorite> favoriteWrapper = new LambdaQueryWrapper<>();
+            favoriteWrapper.eq(Favorite::getUserId, userId).eq(Favorite::getStatus, 1);
+            List<Favorite> userFavorites = favoriteMapper.selectList(favoriteWrapper);
+
+            for (Order order : userOrders) {
+                userRatings.merge(order.getProductId(), RecommendConstants.BehaviorWeight.PURCHASE, Double::sum);
+            }
+            for (Favorite favorite : userFavorites) {
+                userRatings.merge(favorite.getProductId(), RecommendConstants.BehaviorWeight.FAVORITE, Double::sum);
+            }
+        }
+
+        if (userRatings.isEmpty()) {
+            LOGGER.warn("[推荐服务] 用户{}没有任何订单或收藏记录", userId);
+        }
+
+        return userRatings;
+    }
+
+    /**
+     * 查找相似用户
+     */
+    private Map<Long, Double> findSimilarUsers(Long userId, Map<Long, Double> userRatings) {
+        // 获取相似度矩阵
+        Map<Long, Map<Long, Double>> similarityMatrix = calculateUserSimilarity();
+
+        // 合并相似度
+        Map<Long, Double> similarUsers = new HashMap<>(16);
+        if (similarityMatrix.containsKey(userId)) {
+            similarUsers.putAll(similarityMatrix.get(userId));
+        }
+        for (Map.Entry<Long, Map<Long, Double>> entry : similarityMatrix.entrySet()) {
+            if (entry.getValue().containsKey(userId)) {
+                similarUsers.put(entry.getKey(), entry.getValue().get(userId));
+            }
+        }
+
+        // 动态调整相似度阈值
+        double threshold = getSimilarityThreshold(userRatings.size());
+
+        // 过滤和排序
+        return similarUsers.entrySet().stream()
+                .filter(entry -> entry.getValue() >= threshold)
+                .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
+                .limit(RecommendConstants.RecommendLimit.MAX_SIMILAR_USERS)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    /**
+     * 根据用户活跃度获取相似度阈值
+     */
+    private double getSimilarityThreshold(int ratingCount) {
+        if (ratingCount < 3) {
+            return RecommendConstants.SimilarityThreshold.NEW_USER;
+        } else if (ratingCount > 10) {
+            return RecommendConstants.SimilarityThreshold.ACTIVE_USER;
+        }
+        return RecommendConstants.SimilarityThreshold.NORMAL_USER;
+    }
+
+    /**
+     * 记录相似用户日志
+     */
+    private void logSimilarUsers(Map<Long, Double> similarUsers) {
+        for (Map.Entry<Long, Double> entry : similarUsers.entrySet()) {
+            Long similarUserId = entry.getKey();
+            double similarity = entry.getValue();
+            UserLocationInfo loc = getUserLocation(similarUserId);
+            LOGGER.info("[推荐服务] 相似用户: {}, 相似度: {}, 位置: {}",
+                    similarUserId, similarity,
+                    loc != null ? loc.getProvince() + "-" + loc.getCity() : "无");
+        }
+    }
+
+    /**
+     * 获取推荐商品列表
+     */
+    private List<Product> getRecommendedProducts(Long userId, Map<Long, Double> userRatings,
+                                                Map<Long, Double> similarUsers) {
+        // 收集推荐商品及其得分
+        Map<Long, Double> productScores = calculateProductScores(userRatings, similarUsers, userId);
+
+        if (productScores.isEmpty()) {
+            LOGGER.info("[推荐服务] 没有找到相似用户，使用基于销量的推荐");
+            return productMapper.selectList(
+                    new LambdaQueryWrapper<Product>()
+                            .orderByDesc(Product::getSalesCount)
+                            .last("LIMIT " + RecommendConstants.RecommendLimit.MAX_RECOMMEND_COUNT)
+            );
+        }
+
+        // 按得分排序
+        List<Map.Entry<Long, Double>> sortedProducts = new ArrayList<>(productScores.entrySet());
+        sortedProducts.sort((e1, e2) -> e2.getValue().compareTo(e1.getValue()));
+
+        List<Long> recommendedIds = sortedProducts.stream()
+                .limit(RecommendConstants.RecommendLimit.MAX_RECOMMEND_COUNT)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
+
+        return productMapper.selectList(
+                new LambdaQueryWrapper<Product>()
+                        .in(Product::getId, recommendedIds)
+        );
+    }
+
+    /**
+     * 计算商品推荐得分
+     *
+     * 使用皮尔逊相关系数后的预测评分公式：
+     * 预测评分 = 用户平均分 + Σ(相似度 × (商品评分 - 用户平均分)) / Σ|相似度|
+     *
+     * 这样可以消除用户评分偏好的影响
+     */
+    private Map<Long, Double> calculateProductScores(Map<Long, Double> userRatings,
+                                                     Map<Long, Double> similarUsers,
+                                                     Long targetUserId) {
+        Map<Long, Double> productScores = new HashMap<>(32);
+        Map<Long, Double> weightSum = new HashMap<>(32);
+
+        // 获取目标用户的平均评分
+        double targetUserMean = userMeanRatingCache.getOrDefault(targetUserId, 0.0);
+
+        for (Map.Entry<Long, Double> entry : similarUsers.entrySet()) {
+            Long similarUserId = entry.getKey();
+            double similarity = entry.getValue();
+
+            // 相似度为0，跳过
+            if (similarity <= 0) {
+                continue;
+            }
+
+            Map<Long, Double> similarUserRatings = userRatingMatrix.get(similarUserId);
+            if (similarUserRatings == null) {
+                continue;
+            }
+
+            // 获取相似用户的平均评分
+            double similarUserMean = userMeanRatingCache.getOrDefault(similarUserId, 0.0);
+
+            // 遍历相似用户的所有评分商品
+            for (Map.Entry<Long, Double> ratingEntry : similarUserRatings.entrySet()) {
+                Long productId = ratingEntry.getKey();
+                double rating = ratingEntry.getValue();
+
+                // 排除用户已购买/收藏的商品
+                if (userRatings.containsKey(productId)) {
+                    continue;
+                }
+
+                // 使用中心化评分：(商品评分 - 用户平均分)
+                double centeredRating = rating - similarUserMean;
+
+                // 加权累加
+                productScores.merge(productId, similarity * centeredRating, Double::sum);
+                weightSum.merge(productId, similarity, Double::sum);
+            }
+        }
+
+        // 归一化：预测评分 = 用户平均分 + 加权中心化评分总和 / 相似度之和
+        for (Long productId : productScores.keySet()) {
+            double totalWeight = weightSum.get(productId);
+            if (totalWeight > 0) {
+                double centeredScore = productScores.get(productId) / totalWeight;
+                productScores.put(productId, targetUserMean + centeredScore);
+            } else {
+                productScores.put(productId, targetUserMean);
+            }
+        }
+
+        return productScores;
+    }
+
+    /**
+     * 定时更新所有用户推荐
+     */
     public void updateRecommendations() {
         try {
-            // 获取所有用户ID
-            List<Long> userIds = orderMapper.selectList(new LambdaQueryWrapper<>())
-                .stream()
-                .map(Order::getUserId)
-                .distinct()
-                .toList();
+            refreshLocationCache();
+            buildRatingMatrix();
 
-            // 为每个用户生成推荐
+            List<Long> userIds = new ArrayList<>(userRatingMatrix.keySet());
+
             for (Long userId : userIds) {
                 generateRecommendations(userId);
             }
 
-            LOGGER.info("成功更新所有用户推荐");
+            LOGGER.info("[推荐服务] 成功更新所有用户推荐");
         } catch (Exception e) {
-            LOGGER.error("更新推荐失败: {}", e.getMessage());
+            LOGGER.error("[推荐服务] 更新推荐失败: {}", e.getMessage(), e);
         }
     }
-} 
+}
