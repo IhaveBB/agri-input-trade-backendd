@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.example.springboot.common.Result;
 import org.example.springboot.enumClass.UserRole;
+import org.example.springboot.service.RecommendActionService;
 import org.example.springboot.service.StatisticsService;
 import org.example.springboot.util.UserContext;
 import org.slf4j.Logger;
@@ -24,6 +25,9 @@ public class StatisticsController {
 
     @Autowired
     private StatisticsService statisticsService;
+
+    @Autowired
+    private RecommendActionService recommendActionService;
 
     @Operation(summary = "获取本月订单统计")
     @GetMapping("/orders/monthly")
@@ -139,5 +143,71 @@ public class StatisticsController {
         LOGGER.info("获取品类销售占比统计");
         Map<String, Object> statistics = statisticsService.getCategorySalesStatistics();
         return Result.success(statistics);
+    }
+
+    // ==================== 推荐系统效果评估接口 ====================
+
+    @Operation(summary = "获取推荐系统效果概览")
+    @GetMapping("/recommend/overview")
+    public Result<?> getRecommendOverview() {
+        LOGGER.info("获取推荐系统效果概览");
+        Map<String, Object> overview = recommendActionService.getRecommendOverview();
+        return Result.success(overview);
+    }
+
+    @Operation(summary = "获取推荐效果趋势")
+    @GetMapping("/recommend/trend")
+    public Result<?> getRecommendTrend(@RequestParam(defaultValue = "30") Integer days) {
+        LOGGER.info("获取推荐效果趋势, days: {}", days);
+        Map<String, Object> trend = recommendActionService.getRecommendTrend(days);
+        return Result.success(trend);
+    }
+
+    @Operation(summary = "获取分类推荐效果")
+    @GetMapping("/recommend/category-effect")
+    public Result<?> getCategoryEffect() {
+        LOGGER.info("获取分类推荐效果");
+        Map<String, Object> categoryEffect = recommendActionService.getCategoryEffect();
+        return Result.success(categoryEffect);
+    }
+
+    @Operation(summary = "获取推荐算法构成")
+    @GetMapping("/recommend/algorithm-composition")
+    public Result<?> getAlgorithmComposition() {
+        LOGGER.info("获取推荐算法构成");
+        Map<String, Object> composition = recommendActionService.getAlgorithmComposition();
+        return Result.success(composition);
+    }
+
+    @Operation(summary = "获取推荐多样性指标（信息熵）")
+    @GetMapping("/recommend/diversity")
+    public Result<?> getRecommendationDiversity() {
+        LOGGER.info("获取推荐多样性指标");
+        Map<String, Object> diversity = recommendActionService.getRecommendationDiversity();
+        return Result.success(diversity);
+    }
+
+    @Operation(summary = "获取用户行为相似度分布")
+    @GetMapping("/recommend/user-similarity")
+    public Result<?> getUserSimilarityDistribution() {
+        LOGGER.info("获取用户行为相似度分布");
+        Map<String, Object> similarity = recommendActionService.getUserSimilarityDistribution();
+        return Result.success(similarity);
+    }
+
+    @Operation(summary = "获取智能优化建议")
+    @GetMapping("/recommend/suggestions")
+    public Result<?> getOptimizationSuggestions() {
+        LOGGER.info("获取智能优化建议");
+        Map<String, Object> suggestions = recommendActionService.getOptimizationSuggestions();
+        return Result.success(suggestions);
+    }
+
+    @Operation(summary = "预测下期推荐效果")
+    @GetMapping("/recommend/prediction")
+    public Result<?> predictNextPeriodEffect() {
+        LOGGER.info("预测下期推荐效果");
+        Map<String, Object> prediction = recommendActionService.predictNextPeriodEffect();
+        return Result.success(prediction);
     }
 }

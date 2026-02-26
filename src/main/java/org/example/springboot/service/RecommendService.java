@@ -9,6 +9,7 @@ import org.example.springboot.entity.Favorite;
 import org.example.springboot.entity.User;
 import org.example.springboot.enumClass.RecommendConstants;
 import org.example.springboot.enumClass.RecommendConstants.LocationLevel;
+import org.example.springboot.enumClass.RecommendActionType;
 import org.example.springboot.mapper.OrderMapper;
 import org.example.springboot.mapper.FavoriteMapper;
 import org.example.springboot.mapper.ProductMapper;
@@ -46,6 +47,15 @@ public class RecommendService {
     @Autowired
     private RecommendLocationConfig locationConfig;
 
+    @Autowired
+    private RecommendActionService recommendActionService;
+
+    /**
+     * 推荐结果缓存（用于后续埋点归因）
+     * Key: userId, Value: 推荐商品列表（包含位置信息）
+     */
+    private final Map<Long, List<RecommendedProduct>> recommendationCache = new HashMap<>();
+
     /**
      * 用户位置信息缓存
      */
@@ -60,6 +70,28 @@ public class RecommendService {
      * 用户平均评分缓存
      */
     private Map<Long, Double> userMeanRatingCache;
+
+    /**
+     * 推荐商品信息封装类（用于埋点归因）
+     */
+    private static class RecommendedProduct {
+        private final Long productId;
+        private final Long categoryId;
+        private final String source;
+        private final Integer position;
+
+        public RecommendedProduct(Long productId, Long categoryId, String source, Integer position) {
+            this.productId = productId;
+            this.categoryId = categoryId;
+            this.source = source;
+            this.position = position;
+        }
+
+        public Long getProductId() { return productId; }
+        public Long getCategoryId() { return categoryId; }
+        public String getSource() { return source; }
+        public Integer getPosition() { return position; }
+    }
 
     /**
      * 用户位置信息封装类
@@ -101,8 +133,12 @@ public class RecommendService {
      */
     @PostConstruct
     public void init() {
-        refreshLocationCache();
-        buildRatingMatrix();
+        try {
+            refreshLocationCache();
+            buildRatingMatrix();
+        } catch (Exception e) {
+            LOGGER.warn("[推荐服务] 初始化缓存失败，将使用延迟加载: {}", e.getMessage());
+        }
     }
 
     /**
@@ -358,6 +394,9 @@ public class RecommendService {
             // 收集推荐商品
             List<Product> recommendations = getRecommendedProducts(userId, userRatings, similarUsers);
 
+            // 记录推荐曝光埋点
+            recordRecommendationExposure(userId, recommendations);
+
             return Result.success(recommendations);
         } catch (Exception e) {
             LOGGER.error("[推荐服务] 生成推荐失败: {}", e.getMessage(), e);
@@ -548,6 +587,191 @@ public class RecommendService {
         }
 
         return productScores;
+    }
+
+    /**
+     * 记录推荐曝光埋点
+     */
+    private void recordRecommendationExposure(Long userId, List<Product> recommendations) {
+        if (recommendations == null || recommendations.isEmpty()) {
+            return;
+        }
+
+        // 缓存推荐结果，用于后续归因
+        List<RecommendedProduct> cachedProducts = new ArrayList<>();
+
+        // 根据是否有相似用户决定推荐来源
+        String source = RecommendActionType.SOURCE_HOT; // 默认热门推荐
+
+        // 检查是否存在协同过滤推荐结果
+        // 这里简化处理：协同过滤有结果时标记为混合推荐
+        if (userRatingMatrix.containsKey(userId) && !userRatingMatrix.get(userId).isEmpty()) {
+            source = RecommendActionType.SOURCE_HYBRID;
+        }
+
+        for (int i = 0; i < recommendations.size(); i++) {
+            Product product = recommendations.get(i);
+            RecommendedProduct recommendedProduct = new RecommendedProduct(
+                    product.getId(),
+                    product.getCategoryId(),
+                    source,
+                    i + 1 // 位置从1开始
+            );
+            cachedProducts.add(recommendedProduct);
+
+            // 记录曝光（异步）
+            recommendActionService.recordExposure(
+                    userId,
+                    product.getId(),
+                    product.getCategoryId(),
+                    source,
+                    RecommendActionType.SCENE_HOME_PAGE,
+                    i + 1,
+                    null
+            );
+        }
+
+        // 缓存推荐结果，用于后续点击归因
+        recommendationCache.put(userId, cachedProducts);
+    }
+
+    /**
+     * 记录用户点击商品（用于推荐效果归因）
+     * 在ProductController的详情接口中调用
+     */
+    public void recordProductClick(Long userId, Long productId, Long categoryId) {
+        if (userId == null || productId == null) {
+            return;
+        }
+
+        // 从缓存中查找推荐来源
+        String source = RecommendActionType.SOURCE_NATURAL; // 默认自然流量
+        Integer position = null;
+        List<Long> contextProductIds = null;
+
+        List<RecommendedProduct> cached = recommendationCache.get(userId);
+        if (cached != null) {
+            for (RecommendedProduct rp : cached) {
+                if (rp.getProductId().equals(productId)) {
+                    source = rp.getSource();
+                    position = rp.getPosition();
+                    break;
+                }
+            }
+            // 获取同批次推荐的其他商品ID
+            contextProductIds = cached.stream()
+                    .map(RecommendedProduct::getProductId)
+                    .collect(Collectors.toList());
+        }
+
+        // 记录点击
+        recommendActionService.recordClick(
+                userId, productId, categoryId,
+                source, RecommendActionType.SCENE_HOME_PAGE,
+                position, contextProductIds
+        );
+    }
+
+    /**
+     * 记录用户收藏商品（用于推荐效果归因）
+     * 在FavoriteService中添加收藏时调用
+     */
+    public void recordProductCollect(Long userId, Long productId, Long categoryId) {
+        if (userId == null || productId == null) {
+            return;
+        }
+
+        String source = RecommendActionType.SOURCE_NATURAL;
+        Integer position = null;
+        List<Long> contextProductIds = null;
+
+        List<RecommendedProduct> cached = recommendationCache.get(userId);
+        if (cached != null) {
+            for (RecommendedProduct rp : cached) {
+                if (rp.getProductId().equals(productId)) {
+                    source = rp.getSource();
+                    position = rp.getPosition();
+                    break;
+                }
+            }
+            contextProductIds = cached.stream()
+                    .map(RecommendedProduct::getProductId)
+                    .collect(Collectors.toList());
+        }
+
+        recommendActionService.recordCollect(
+                userId, productId, categoryId,
+                source, RecommendActionType.SCENE_HOME_PAGE,
+                position, contextProductIds
+        );
+    }
+
+    /**
+     * 记录用户加入购物车（用于推荐效果归因）
+     * 在CartService中添加购物车时调用
+     */
+    public void recordProductCart(Long userId, Long productId, Long categoryId) {
+        if (userId == null || productId == null) {
+            return;
+        }
+
+        String source = RecommendActionType.SOURCE_NATURAL;
+        Integer position = null;
+        List<Long> contextProductIds = null;
+
+        List<RecommendedProduct> cached = recommendationCache.get(userId);
+        if (cached != null) {
+            for (RecommendedProduct rp : cached) {
+                if (rp.getProductId().equals(productId)) {
+                    source = rp.getSource();
+                    position = rp.getPosition();
+                    break;
+                }
+            }
+            contextProductIds = cached.stream()
+                    .map(RecommendedProduct::getProductId)
+                    .collect(Collectors.toList());
+        }
+
+        recommendActionService.recordCart(
+                userId, productId, categoryId,
+                source, RecommendActionType.SCENE_HOME_PAGE,
+                position, contextProductIds
+        );
+    }
+
+    /**
+     * 记录用户购买（用于推荐效果归因）
+     * 在OrderService创建订单时调用
+     */
+    public void recordProductBuy(Long userId, Long productId, Long categoryId) {
+        if (userId == null || productId == null) {
+            return;
+        }
+
+        String source = RecommendActionType.SOURCE_NATURAL;
+        Integer position = null;
+        List<Long> contextProductIds = null;
+
+        List<RecommendedProduct> cached = recommendationCache.get(userId);
+        if (cached != null) {
+            for (RecommendedProduct rp : cached) {
+                if (rp.getProductId().equals(productId)) {
+                    source = rp.getSource();
+                    position = rp.getPosition();
+                    break;
+                }
+            }
+            contextProductIds = cached.stream()
+                    .map(RecommendedProduct::getProductId)
+                    .collect(Collectors.toList());
+        }
+
+        recommendActionService.recordBuy(
+                userId, productId, categoryId,
+                source, RecommendActionType.SCENE_HOME_PAGE,
+                position, contextProductIds
+        );
     }
 
     /**
