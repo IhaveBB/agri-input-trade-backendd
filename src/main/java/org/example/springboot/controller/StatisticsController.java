@@ -3,6 +3,7 @@ package org.example.springboot.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.example.springboot.common.Result;
+import org.example.springboot.entity.dto.statistics.*;
 import org.example.springboot.enumClass.UserRole;
 import org.example.springboot.service.RecommendActionService;
 import org.example.springboot.service.StatisticsService;
@@ -10,11 +11,9 @@ import org.example.springboot.util.UserContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @Tag(name = "统计分析接口")
@@ -29,185 +28,180 @@ public class StatisticsController {
     @Autowired
     private RecommendActionService recommendActionService;
 
+    // ==================== 销售统计接口 ====================
+
     @Operation(summary = "获取本月订单统计")
     @GetMapping("/orders/monthly")
-    public Result<?> getMonthlyOrderStatistics() {
-        Long userId = UserContext.getUserId();
-        String role = UserContext.getRole();
-
-        if (userId == null) {
-            return Result.error("-1", "用户未登录");
-        }
-
-        Long merchantId = null;
-        // 商户只能查看自己店铺的统计
-        if (UserRole.isMerchant(role)) {
-            merchantId = userId;
-        }
-        // 管理员可以查看全部
-
-        LOGGER.info("获取本月订单统计, merchantId: {}", merchantId);
-        Map<String, Object> statistics = statisticsService.getMonthlyOrderStatistics(merchantId);
+    public Result<OrderStatisticsDTO> getMonthlyOrderStatistics(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取本月订单统计，merchantId: {}", finalMerchantId);
+        OrderStatisticsDTO statistics = statisticsService.getMonthlyOrderStatistics(finalMerchantId);
         return Result.success(statistics);
     }
 
     @Operation(summary = "获取本月销售额统计")
     @GetMapping("/sales/monthly")
-    public Result<?> getMonthlySalesStatistics() {
-        Long userId = UserContext.getUserId();
-        String role = UserContext.getRole();
-
-        if (userId == null) {
-            return Result.error("-1", "用户未登录");
-        }
-
-        Long merchantId = null;
-        // 商户只能查看自己店铺的统计
-        if (UserRole.isMerchant(role)) {
-            merchantId = userId;
-        }
-        // 管理员可以查看全部
-
-        LOGGER.info("获取本月销售额统计, merchantId: {}", merchantId);
-        Map<String, Object> statistics = statisticsService.getMonthlySalesStatistics(merchantId);
+    public Result<SalesStatisticsDTO> getMonthlySalesStatistics(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取本月销售额统计，merchantId: {}", finalMerchantId);
+        SalesStatisticsDTO statistics = statisticsService.getMonthlySalesStatistics(finalMerchantId);
         return Result.success(statistics);
     }
 
     @Operation(summary = "获取用户订单统计")
     @GetMapping("/user/orders")
-    public Result<?> getUserOrderStatistics(@RequestParam(required = false) Long userId) {
-        Long currentUserId = UserContext.getUserId();
-        String role = UserContext.getRole();
-
-        if (currentUserId == null) {
-            return Result.error("-1", "用户未登录");
-        }
-
-        // 如果没有传userId，使用当前用户ID
+    public Result<UserOrderStatisticsDTO> getUserOrderStatistics(@RequestParam(required = false) Long userId) {
         if (userId == null) {
-            userId = currentUserId;
+            userId = UserContext.requireUserId();
+        } else {
+            if (UserContext.isUser() && !userId.equals(UserContext.getUserId())) {
+                throw new UserContext.PermissionDeniedException("无权限查看他人的订单统计");
+            }
         }
 
-        // 普通用户只能查看自己的订单统计
-        if (UserRole.isUser(role) && !currentUserId.equals(userId)) {
-            return Result.error("-1", "无权限查看他人的订单统计");
-        }
-
-        LOGGER.info("获取用户订单统计, userId: {}", userId);
-        Map<String, Object> statistics = statisticsService.getUserOrderStatistics(userId);
+        LOGGER.info("获取用户订单统计，userId: {}", userId);
+        UserOrderStatisticsDTO statistics = statisticsService.getUserOrderStatistics(userId);
         return Result.success(statistics);
     }
 
     @Operation(summary = "获取用户消费统计")
     @GetMapping("/user/spending")
-    public Result<?> getUserSpendingStatistics() {
-        Long userId = UserContext.getUserId();
-        String role = UserContext.getRole();
-
-        if (userId == null) {
-            return Result.error("-1", "用户未登录");
-        }
-
-        // 普通用户只能查看自己的消费统计
-        if (UserRole.isUser(role)) {
-            LOGGER.info("获取用户消费统计, userId: {}", userId);
-            Map<String, Object> statistics = statisticsService.getUserSpendingStatistics(userId);
-            return Result.success(statistics);
-        }
-
-        // 管理员可以查看所有用户的消费统计（需要传userId参数）
-        LOGGER.info("获取用户消费统计, userId: {}", userId);
-        Map<String, Object> statistics = statisticsService.getUserSpendingStatistics(userId);
+    public Result<UserSpendingStatisticsDTO> getUserSpendingStatistics() {
+        Long userId = UserContext.requireUserId();
+        LOGGER.info("获取用户消费统计，userId: {}", userId);
+        UserSpendingStatisticsDTO statistics = statisticsService.getUserSpendingStatistics(userId);
         return Result.success(statistics);
     }
 
     @Operation(summary = "获取用户总数统计")
     @GetMapping("/users/yearly")
-    public Result<?> getYearlyUserStatistics() {
+    public Result<YearlyUserStatisticsDTO> getYearlyUserStatistics() {
         LOGGER.info("获取年度用户统计");
-        Map<String, Object> statistics = statisticsService.getYearlyUserStatistics();
+        YearlyUserStatisticsDTO statistics = statisticsService.getYearlyUserStatistics();
         return Result.success(statistics);
     }
 
-    @Operation(summary = "获取热销商品Top5")
+    @Operation(summary = "获取热销商品 Top5")
     @GetMapping("/products/top5")
-    public Result<?> getTopSellingProducts() {
-        LOGGER.info("获取热销商品Top5统计");
-        Map<String, Object> statistics = statisticsService.getTopSellingProducts();
+    public Result<TopProductsStatisticsDTO> getTopSellingProducts(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取热销商品 Top5 统计，merchantId: {}", finalMerchantId);
+        TopProductsStatisticsDTO statistics = statisticsService.getTopSellingProducts(finalMerchantId);
         return Result.success(statistics);
     }
 
     @Operation(summary = "获取品类销售占比")
     @GetMapping("/category/sales")
-    public Result<?> getCategorySalesStatistics() {
-        LOGGER.info("获取品类销售占比统计");
-        Map<String, Object> statistics = statisticsService.getCategorySalesStatistics();
+    public Result<CategorySalesStatisticsResponse> getCategorySalesStatistics(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取品类销售占比统计，merchantId: {}", finalMerchantId);
+        CategorySalesStatisticsResponse statistics = statisticsService.getCategorySalesStatistics(finalMerchantId);
         return Result.success(statistics);
+    }
+
+    // ==================== 新增统计接口 ====================
+
+    @Operation(summary = "获取销售趋势")
+    @GetMapping("/sales/trend")
+    public Result<SalesTrendResponse> getSalesTrend(
+            @RequestParam(defaultValue = "30") Integer days,
+            @RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取销售趋势，days: {}, merchantId: {}", days, finalMerchantId);
+        SalesTrendResponse response = statisticsService.getSalesTrend(days, finalMerchantId);
+        return Result.success(response);
+    }
+
+    @Operation(summary = "获取季节性销售统计")
+    @GetMapping("/sales/seasonal")
+    public Result<SeasonalSalesResponse> getSeasonalStatistics(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取季节性销售统计，merchantId: {}", finalMerchantId);
+        SeasonalSalesResponse response = statisticsService.getSeasonalStatistics(finalMerchantId);
+        return Result.success(response);
+    }
+
+    @Operation(summary = "获取地区销售统计")
+    @GetMapping("/sales/region")
+    public Result<RegionSalesResponse> getRegionStatistics(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取地区销售统计，merchantId: {}", finalMerchantId);
+        RegionSalesResponse response = statisticsService.getRegionStatistics(finalMerchantId);
+        return Result.success(response);
+    }
+
+    @Operation(summary = "获取商户列表")
+    @GetMapping("/merchants")
+    public Result<List<MerchantDTO>> getMerchantList() {
+        UserContext.checkAdmin();
+        LOGGER.info("获取商户列表");
+        List<MerchantDTO> merchants = statisticsService.getMerchantList();
+        return Result.success(merchants);
     }
 
     // ==================== 推荐系统效果评估接口 ====================
 
     @Operation(summary = "获取推荐系统效果概览")
     @GetMapping("/recommend/overview")
-    public Result<?> getRecommendOverview() {
+    public Result<RecommendOverviewResponse> getRecommendOverview() {
         LOGGER.info("获取推荐系统效果概览");
-        Map<String, Object> overview = recommendActionService.getRecommendOverview();
-        return Result.success(overview);
+        RecommendOverviewResponse response = recommendActionService.getRecommendOverview();
+        return Result.success(response);
     }
 
     @Operation(summary = "获取推荐效果趋势")
     @GetMapping("/recommend/trend")
-    public Result<?> getRecommendTrend(@RequestParam(defaultValue = "30") Integer days) {
-        LOGGER.info("获取推荐效果趋势, days: {}", days);
-        Map<String, Object> trend = recommendActionService.getRecommendTrend(days);
-        return Result.success(trend);
+    public Result<RecommendTrendResponse> getRecommendTrend(@RequestParam(defaultValue = "30") Integer days) {
+        LOGGER.info("获取推荐效果趋势，days: {}", days);
+        RecommendTrendResponse response = recommendActionService.getRecommendTrend(days);
+        return Result.success(response);
     }
 
     @Operation(summary = "获取分类推荐效果")
     @GetMapping("/recommend/category-effect")
-    public Result<?> getCategoryEffect() {
+    public Result<RecommendCategoryEffectResponse> getCategoryEffect() {
         LOGGER.info("获取分类推荐效果");
-        Map<String, Object> categoryEffect = recommendActionService.getCategoryEffect();
-        return Result.success(categoryEffect);
+        RecommendCategoryEffectResponse response = recommendActionService.getCategoryEffect();
+        return Result.success(response);
     }
 
     @Operation(summary = "获取推荐算法构成")
     @GetMapping("/recommend/algorithm-composition")
-    public Result<?> getAlgorithmComposition() {
+    public Result<RecommendAlgorithmResponse> getAlgorithmComposition() {
         LOGGER.info("获取推荐算法构成");
-        Map<String, Object> composition = recommendActionService.getAlgorithmComposition();
-        return Result.success(composition);
+        RecommendAlgorithmResponse response = recommendActionService.getAlgorithmComposition();
+        return Result.success(response);
     }
 
     @Operation(summary = "获取推荐多样性指标（信息熵）")
     @GetMapping("/recommend/diversity")
-    public Result<?> getRecommendationDiversity() {
+    public Result<RecommendDiversityDTO> getRecommendationDiversity() {
         LOGGER.info("获取推荐多样性指标");
-        Map<String, Object> diversity = recommendActionService.getRecommendationDiversity();
-        return Result.success(diversity);
+        RecommendDiversityDTO response = recommendActionService.getRecommendationDiversity();
+        return Result.success(response);
     }
 
     @Operation(summary = "获取用户行为相似度分布")
     @GetMapping("/recommend/user-similarity")
-    public Result<?> getUserSimilarityDistribution() {
+    public Result<RecommendUserSimilarityDTO> getUserSimilarityDistribution() {
         LOGGER.info("获取用户行为相似度分布");
-        Map<String, Object> similarity = recommendActionService.getUserSimilarityDistribution();
-        return Result.success(similarity);
+        RecommendUserSimilarityDTO response = recommendActionService.getUserSimilarityDistribution();
+        return Result.success(response);
     }
 
     @Operation(summary = "获取智能优化建议")
     @GetMapping("/recommend/suggestions")
-    public Result<?> getOptimizationSuggestions() {
+    public Result<RecommendOptimizationDTO> getOptimizationSuggestions() {
         LOGGER.info("获取智能优化建议");
-        Map<String, Object> suggestions = recommendActionService.getOptimizationSuggestions();
-        return Result.success(suggestions);
+        RecommendOptimizationDTO response = recommendActionService.getOptimizationSuggestions();
+        return Result.success(response);
     }
 
     @Operation(summary = "预测下期推荐效果")
     @GetMapping("/recommend/prediction")
-    public Result<?> predictNextPeriodEffect() {
+    public Result<RecommendPredictionDTO> predictNextPeriodEffect() {
         LOGGER.info("预测下期推荐效果");
-        Map<String, Object> prediction = recommendActionService.predictNextPeriodEffect();
-        return Result.success(prediction);
+        RecommendPredictionDTO response = recommendActionService.predictNextPeriodEffect();
+        return Result.success(response);
     }
 }

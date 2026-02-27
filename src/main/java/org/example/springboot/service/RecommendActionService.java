@@ -3,6 +3,7 @@ package org.example.springboot.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.annotation.Resource;
 import org.example.springboot.entity.RecommendAction;
+import org.example.springboot.entity.dto.statistics.*;
 import org.example.springboot.mapper.RecommendActionMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,11 +11,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
 
 /**
@@ -170,11 +167,10 @@ public class RecommendActionService {
      * 作用：本月推荐效果的汇总指标，包括曝光数、点击数、购买数、CTR、CVR、环比增长率、覆盖用户数
      * 用于：大屏首页的核心指标卡片展示
      */
-    public Map<String, Object> getRecommendOverview() {
-        Map<String, Object> result = new HashMap<>();
+    public RecommendOverviewResponse getRecommendOverview() {
+        RecommendOverviewResponse response = new RecommendOverviewResponse();
 
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime startOfDay = now.toLocalDate().atStartOfDay();
         LocalDateTime lastMonthStart = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
 
         // 本月统计
@@ -198,20 +194,20 @@ public class RecommendActionService {
         double clickGrowth = calculateGrowth(monthClickCount, lastMonthClickCount);
         double buyGrowth = calculateGrowth(monthBuyCount, lastMonthBuyCount);
 
-        result.put("exposureCount", monthExposureCount);
-        result.put("clickCount", monthClickCount);
-        result.put("buyCount", monthBuyCount);
-        result.put("ctr", String.format("%.2f", ctr) + "%");
-        result.put("cvr", String.format("%.2f", cvr) + "%");
-        result.put("exposureGrowth", String.format("%.2f", exposureGrowth) + "%");
-        result.put("clickGrowth", String.format("%.2f", clickGrowth) + "%");
-        result.put("buyGrowth", String.format("%.2f", buyGrowth) + "%");
+        response.setExposureCount(monthExposureCount);
+        response.setClickCount(monthClickCount);
+        response.setBuyCount(monthBuyCount);
+        response.setCtr(String.format("%.2f", ctr) + "%");
+        response.setCvr(String.format("%.2f", cvr) + "%");
+        response.setExposureGrowth(String.format("%.2f", exposureGrowth) + "%");
+        response.setClickGrowth(String.format("%.2f", clickGrowth) + "%");
+        response.setBuyGrowth(String.format("%.2f", buyGrowth) + "%");
 
         // 覆盖用户数
         Long coveredUsers = recommendActionMapper.countDistinctUsers(lastMonthStart, now, null);
-        result.put("coveredUsers", coveredUsers != null ? coveredUsers : 0);
+        response.setCoveredUsers(coveredUsers != null ? coveredUsers : 0L);
 
-        return result;
+        return response;
     }
 
     /**
@@ -226,8 +222,8 @@ public class RecommendActionService {
      * 作用：按天统计推荐效果的变化趋势，返回近N天每天的曝光、点击、购买数量
      * 用于：大屏图表-推荐效果趋势（折线图），支持7天/30天/90天等时间范围
      */
-    public Map<String, Object> getRecommendTrend(Integer days) {
-        Map<String, Object> result = new HashMap<>();
+    public RecommendTrendResponse getRecommendTrend(Integer days) {
+        RecommendTrendResponse response = new RecommendTrendResponse();
 
         if (days == null || days <= 0) {
             days = DefaultParams.TREND_DEFAULT_DAYS;
@@ -236,12 +232,44 @@ public class RecommendActionService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime startTime = now.minusDays(days).withHour(0).withMinute(0).withSecond(0);
 
-        List<Map<String, Object>> trendData = recommendActionMapper.countTrendByDay(startTime, now, null);
+        // 使用返回DTO的Mapper方法
+        List<RecommendTrendDTO> trendList = recommendActionMapper.selectTrendByDay(startTime, now, null);
 
-        result.put("trend", trendData);
-        result.put("days", days);
+        // 填充缺失的日期
+        Map<String, RecommendTrendDTO> trendMap = trendList.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        RecommendTrendDTO::getDate,
+                        d -> d,
+                        (a, b) -> a
+                ));
 
-        return result;
+        List<RecommendTrendDTO> filledTrend = new ArrayList<>();
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        for (int i = 0; i < days; i++) {
+            LocalDateTime day = now.minusDays(days - 1 - i);
+            String dayKey = day.format(formatter);
+            RecommendTrendDTO dto = trendMap.get(dayKey);
+            if (dto == null) {
+                dto = new RecommendTrendDTO();
+                dto.setDate(dayKey);
+                dto.setExposureCount(0L);
+                dto.setClickCount(0L);
+                dto.setBuyCount(0L);
+            }
+            filledTrend.add(dto);
+        }
+
+        long totalExposure = filledTrend.stream().mapToLong(d -> d.getExposureCount() != null ? d.getExposureCount() : 0L).sum();
+        long totalClick = filledTrend.stream().mapToLong(d -> d.getClickCount() != null ? d.getClickCount() : 0L).sum();
+        long totalBuy = filledTrend.stream().mapToLong(d -> d.getBuyCount() != null ? d.getBuyCount() : 0L).sum();
+
+        response.setTrend(filledTrend);
+        response.setDays(days);
+        response.setTotalExposure(totalExposure);
+        response.setTotalClick(totalClick);
+        response.setTotalBuy(totalBuy);
+
+        return response;
     }
 
     /**
@@ -249,26 +277,29 @@ public class RecommendActionService {
      * 作用：统计各商品分类的推荐效果，计算每个品类的曝光、点击、购买及CTR/CVR
      * 用于：大屏图表-分类推荐效果（柱状图/饼图），分析哪些品类推荐效果好
      */
-    public Map<String, Object> getCategoryEffect() {
-        Map<String, Object> result = new HashMap<>();
+    public RecommendCategoryEffectResponse getCategoryEffect() {
+        RecommendCategoryEffectResponse response = new RecommendCategoryEffectResponse();
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime startTime = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
 
-        List<Map<String, Object>> categoryData = recommendActionMapper.countByCategory(startTime, now);
+        // 使用返回DTO的Mapper方法
+        List<RecommendCategoryEffectDTO> categoryList = recommendActionMapper.selectCategoryEffect(startTime, now);
 
         // 计算各类别的转化率
-        for (Map<String, Object> category : categoryData) {
-            long exposure = ((Number) category.get("exposure_count")).longValue();
-            long click = ((Number) category.get("click_count")).longValue();
-            long buy = ((Number) category.get("buy_count")).longValue();
+        for (RecommendCategoryEffectDTO dto : categoryList) {
+            long exposure = dto.getExposureCount() != null ? dto.getExposureCount() : 0L;
+            long click = dto.getClickCount() != null ? dto.getClickCount() : 0L;
+            long buy = dto.getBuyCount() != null ? dto.getBuyCount() : 0L;
 
-            category.put("ctr", exposure > 0 ? String.format("%.2f", (double) click / exposure * 100) + "%" : "0%");
-            category.put("cvr", exposure > 0 ? String.format("%.2f", (double) buy / exposure * 100) + "%" : "0%");
+            dto.setCtr(exposure > 0 ? String.format("%.2f", (double) click / exposure * 100) + "%" : "0%");
+            dto.setCvr(exposure > 0 ? String.format("%.2f", (double) buy / exposure * 100) + "%" : "0%");
         }
 
-        result.put("categoryEffect", categoryData);
-        return result;
+        response.setCategoryEffect(categoryList);
+        response.setTotalCategories(categoryList.size());
+
+        return response;
     }
 
     /**
@@ -276,8 +307,8 @@ public class RecommendActionService {
      * 作用：统计各推荐来源（算法）的使用占比，分析推荐系统的算法构成
      * 用于：大屏图表-推荐算法构成（饼图/环形图），展示协同过滤、热门推荐等算法占比
      */
-    public Map<String, Object> getAlgorithmComposition() {
-        Map<String, Object> result = new HashMap<>();
+    public RecommendAlgorithmResponse getAlgorithmComposition() {
+        RecommendAlgorithmResponse response = new RecommendAlgorithmResponse();
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime startTime = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
@@ -305,10 +336,10 @@ public class RecommendActionService {
             composition.put(entry.getKey(), String.format("%.1f", percentage) + "%");
         }
 
-        result.put("composition", composition);
-        result.put("total", total);
+        response.setComposition(composition);
+        response.setTotal(total);
 
-        return result;
+        return response;
     }
 
     /**
@@ -316,8 +347,8 @@ public class RecommendActionService {
      * 作用：计算推荐商品类目分布的信息熵，评估推荐结果的多样性程度（熵越高推荐越多样）
      * 用于：大屏指标卡片-推荐多样性，提示是否需要增加推荐结果的丰富度
      */
-    public Map<String, Object> getRecommendationDiversity() {
-        Map<String, Object> result = new HashMap<>();
+    public RecommendDiversityDTO getRecommendationDiversity() {
+        RecommendDiversityDTO response = new RecommendDiversityDTO();
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime startTime = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
@@ -326,10 +357,10 @@ public class RecommendActionService {
         List<Map<String, Object>> categoryData = recommendActionMapper.countByCategory(startTime, now);
 
         if (categoryData == null || categoryData.isEmpty()) {
-            result.put("entropy", "0.00");
-            result.put("diversityLevel", "无数据");
-            result.put("categoryDistribution", new HashMap<>());
-            return result;
+            response.setEntropy("0.00");
+            response.setDiversityLevel("无数据");
+            response.setCategoryDistribution(new HashMap<>());
+            return response;
         }
 
         // 计算信息熵 H = -Σ(p * log2(p))
@@ -340,6 +371,9 @@ public class RecommendActionService {
         for (Map<String, Object> category : categoryData) {
             long exposure = ((Number) category.get("exposure_count")).longValue();
             String categoryName = (String) category.get("category_name");
+            if (categoryName == null) {
+                categoryName = "未知";
+            }
             totalExposure += exposure;
             distribution.put(categoryName, exposure);
         }
@@ -368,12 +402,12 @@ public class RecommendActionService {
             diversityLevel = "推荐过于集中";
         }
 
-        result.put("entropy", String.format("%.2f", entropy));
-        result.put("maxEntropy", String.format("%.2f", maxEntropy));
-        result.put("normalizedDiversity", String.format("%.2f", normalizedDiversity * 100) + "%");
-        result.put("diversityLevel", diversityLevel);
-        result.put("categoryCount", distribution.size());
-        result.put("totalExposure", totalExposure);
+        response.setEntropy(String.format("%.2f", entropy));
+        response.setMaxEntropy(String.format("%.2f", maxEntropy));
+        response.setNormalizedDiversity(String.format("%.2f", normalizedDiversity * 100) + "%");
+        response.setDiversityLevel(diversityLevel);
+        response.setCategoryCount(distribution.size());
+        response.setTotalExposure(totalExposure);
 
         // 分类分布百分比
         Map<String, String> distributionPercent = new HashMap<>();
@@ -381,10 +415,10 @@ public class RecommendActionService {
             double percent = totalExposure > 0 ? (double) entry.getValue() / totalExposure * 100 : 0;
             distributionPercent.put(entry.getKey(), String.format("%.1f", percent) + "%");
         }
-        result.put("categoryDistribution", distributionPercent);
+        response.setCategoryDistribution(distributionPercent);
 
         LOGGER.info("[推荐多样性] 熵: {}, 多样性等级: {}", entropy, diversityLevel);
-        return result;
+        return response;
     }
 
     /**
@@ -392,11 +426,8 @@ public class RecommendActionService {
      * 作用：分析推荐用户的行为深度转化漏斗（曝光→点击→加购/收藏→购买），统计各层级用户占比
      * 用于：大屏图表-用户转化漏斗（漏斗图），分析推荐的用户转化效果
      */
-    public Map<String, Object> getUserSimilarityDistribution() {
-        Map<String, Object> result = new HashMap<>();
-
-        // 这里需要结合RecommendService中的相似度数据
-        // 由于推荐服务中相似度是运行时计算的，我们可以从另一个角度分析
+    public RecommendUserSimilarityDTO getUserSimilarityDistribution() {
+        RecommendUserSimilarityDTO result = new RecommendUserSimilarityDTO();
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime startTime = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
@@ -410,27 +441,27 @@ public class RecommendActionService {
         double clickRate = totalUsers > 0 ? (double) usersWithClick / totalUsers * 100 : 0;
         double buyRate = totalUsers > 0 ? (double) usersWithBuy / totalUsers * 100 : 0;
 
-        Map<String, Object> funnel = new HashMap<>();
-        funnel.put("totalUsers", totalUsers != null ? totalUsers : 0);
-        funnel.put("usersWithClick", usersWithClick != null ? usersWithClick : 0);
-        funnel.put("usersWithBuy", usersWithBuy != null ? usersWithBuy : 0);
-        funnel.put("clickRate", String.format("%.2f", clickRate) + "%");
-        funnel.put("buyRate", String.format("%.2f", buyRate) + "%");
-
-        result.put("funnel", funnel);
+        // 构建漏斗DTO
+        RecommendUserSimilarityDTO.FunnelDTO funnel = new RecommendUserSimilarityDTO.FunnelDTO();
+        funnel.setTotalUsers(totalUsers != null ? totalUsers : 0L);
+        funnel.setUsersWithClick(usersWithClick != null ? usersWithClick : 0L);
+        funnel.setUsersWithBuy(usersWithBuy != null ? usersWithBuy : 0L);
+        funnel.setClickRate(String.format("%.2f", clickRate) + "%");
+        funnel.setBuyRate(String.format("%.2f", buyRate) + "%");
+        result.setFunnel(funnel);
 
         // 行为深度分析
-        Map<String, Object> depthAnalysis = analyzeBehaviorDepth(startTime, now);
-        result.put("depthAnalysis", depthAnalysis);
+        RecommendUserSimilarityDTO.DepthAnalysisDTO depthAnalysis = analyzeBehaviorDepthDTO(startTime, now);
+        result.setDepthAnalysis(depthAnalysis);
 
         return result;
     }
 
     /**
-     * 分析用户行为深度
+     * 分析用户行为深度（返回DTO）
      */
-    private Map<String, Object> analyzeBehaviorDepth(LocalDateTime startTime, LocalDateTime endTime) {
-        Map<String, Object> result = new HashMap<>();
+    private RecommendUserSimilarityDTO.DepthAnalysisDTO analyzeBehaviorDepthDTO(LocalDateTime startTime, LocalDateTime endTime) {
+        RecommendUserSimilarityDTO.DepthAnalysisDTO result = new RecommendUserSimilarityDTO.DepthAnalysisDTO();
 
         LambdaQueryWrapper<RecommendAction> wrapper = new LambdaQueryWrapper<>();
         wrapper.ge(RecommendAction::getCreatedAt, startTime)
@@ -477,12 +508,12 @@ public class RecommendActionService {
         depthDistribution.put("深度2(点击)", total > 0 ? String.format("%.1f", (double) depth2 / total * 100) + "%" : "0%");
         depthDistribution.put("深度1(仅曝光)", total > 0 ? String.format("%.1f", (double) depth1 / total * 100) + "%" : "0%");
 
-        result.put("totalUsers", total);
-        result.put("depthDistribution", depthDistribution);
+        result.setTotalUsers(total);
+        result.setDepthDistribution(depthDistribution);
 
         // 计算平均行为数
         double avgActions = total > 0 ? (double) actions.size() / total : 0;
-        result.put("avgActionsPerUser", String.format("%.2f", avgActions));
+        result.setAvgActionsPerUser(String.format("%.2f", avgActions));
 
         return result;
     }
@@ -492,7 +523,7 @@ public class RecommendActionService {
      * 作用：基于转化率、多样性、数据量等指标，自动分析并生成优化建议和健康度评分
      * 用于：大屏展示-智能优化建议面板，展示问题诊断和优化操作指引
      */
-    public Map<String, Object> getOptimizationSuggestions() {
+    public RecommendOptimizationDTO getOptimizationSuggestions() {
         // 初始化规则引擎
         List<SuggestionRule> rules = buildRules();
         List<ScoreFactor> scoreFactors = buildScoreFactors();
@@ -507,12 +538,12 @@ public class RecommendActionService {
         double healthScore = calculateHealthScore(scoreFactors, metrics);
         String healthLevel = getHealthLevel(healthScore);
 
-        // 构建返回结果
-        Map<String, Object> result = new HashMap<>();
-        result.put("healthScore", String.format("%.0f", healthScore));
-        result.put("healthLevel", healthLevel);
-        result.put("suggestions", suggestions);
-        result.put("analyzedAt", LocalDateTime.now().toString());
+        // 构建返回DTO
+        RecommendOptimizationDTO result = new RecommendOptimizationDTO();
+        result.setHealthScore(String.format("%.0f", healthScore));
+        result.setHealthLevel(healthLevel);
+        result.setSuggestions(suggestions);
+        result.setAnalyzedAt(LocalDateTime.now().toString());
 
         LOGGER.info("[优化建议] 健康度评分: {}, 建议数: {}", healthScore, suggestions.size());
         return result;
@@ -571,22 +602,23 @@ public class RecommendActionService {
         Map<String, Object> metrics = new HashMap<>();
 
         // 转化率
-        Map<String, Object> overview = getRecommendOverview();
+        RecommendOverviewResponse overview = getRecommendOverview();
         double cvr = 0;
-        try {
-            String cvrStr = (String) overview.get("cvr");
-            cvr = Double.parseDouble(cvrStr.replace("%", ""));
-        } catch (Exception e) {
-            cvr = 0;
+        if (overview.getCvr() != null) {
+            try {
+                cvr = Double.parseDouble(overview.getCvr().replace("%", ""));
+            } catch (Exception e) {
+                cvr = 0;
+            }
         }
         metrics.put("cvrValue", cvr);
 
         // 多样性
-        Map<String, Object> diversity = getRecommendationDiversity();
-        metrics.put("diversityLevel", diversity.get("diversityLevel"));
+        RecommendDiversityDTO diversity = getRecommendationDiversity();
+        metrics.put("diversityLevel", diversity.getDiversityLevel());
 
         // 覆盖用户数
-        metrics.put("coveredUsers", overview.get("coveredUsers"));
+        metrics.put("coveredUsers", overview.getCoveredUsers());
 
         return metrics;
     }
@@ -642,8 +674,8 @@ public class RecommendActionService {
      * 作用：基于近7天历史数据，使用线性回归预测下期的推荐转化率，并给出置信度和趋势判断
      * 用于：大屏展示-效果预测卡片，预测未来推荐效果走势
      */
-    public Map<String, Object> predictNextPeriodEffect() {
-        Map<String, Object> result = new HashMap<>();
+    public RecommendPredictionDTO predictNextPeriodEffect() {
+        RecommendPredictionDTO result = new RecommendPredictionDTO();
 
         LocalDateTime now = LocalDateTime.now();
 
@@ -655,8 +687,9 @@ public class RecommendActionService {
         );
 
         if (weeklyData == null || weeklyData.size() < DefaultParams.MIN_DATA_POINTS) {
-            result.put("prediction", "数据不足，无法预测");
-            result.put("confidence", "低");
+            result.setPredictedCVR("数据不足，无法预测");
+            result.setConfidence("低");
+            result.setWeeklyData(weeklyData);
             return result;
         }
 
@@ -707,11 +740,11 @@ public class RecommendActionService {
             confidence = "低";
         }
 
-        result.put("predictedCVR", String.format("%.2f", predictedCVR) + "%");
-        result.put("confidence", confidence);
-        result.put("rSquared", String.format("%.2f", r2));
-        result.put("trend", a > 0.1 ? "上升" : (a < -0.1 ? "下降" : "平稳"));
-        result.put("weeklyData", weeklyData);
+        result.setPredictedCVR(String.format("%.2f", predictedCVR) + "%");
+        result.setConfidence(confidence);
+        result.setRSquared(String.format("%.2f", r2));
+        result.setTrend(a > 0.1 ? "上升" : (a < -0.1 ? "下降" : "平稳"));
+        result.setWeeklyData(weeklyData);
 
         LOGGER.info("[效果预测] 预测转化率: {}%, 置信度: {}, 趋势: {}", predictedCVR, confidence, a > 0.1 ? "上升" : "下降");
         return result;

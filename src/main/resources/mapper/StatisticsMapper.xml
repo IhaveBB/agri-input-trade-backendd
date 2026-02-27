@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="org.example.springboot.mapper.StatisticsMapper">
+
+    <!-- 销售趋势按天查询 -->
+    <select id="selectSalesTrend" resultType="org.example.springboot.entity.dto.statistics.SalesTrendDTO">
+        SELECT
+            DATE_FORMAT(o.created_at, '%m/%d') AS date,
+            COUNT(*) AS orderCount,
+            COALESCE(SUM(o.total_price), 0) AS salesAmount,
+            COALESCE(SUM(o.quantity), 0) AS productCount
+        FROM `order` o
+        LEFT JOIN product p ON o.product_id = p.id
+        WHERE o.status = 3
+        AND o.created_at BETWEEN #{startTime} AND #{endTime}
+        <if test="merchantId != null">
+            AND p.merchant_id = #{merchantId}
+        </if>
+        GROUP BY DATE_FORMAT(o.created_at, '%m/%d')
+        ORDER BY DATE_FORMAT(o.created_at, '%m/%d') ASC
+    </select>
+
+    <!-- 按季节查询销售统计 -->
+    <select id="selectSeasonalSales" resultType="org.example.springboot.entity.dto.statistics.SeasonalSalesDTO">
+        SELECT
+            t.season,
+            COUNT(*) AS orderCount,
+            COALESCE(SUM(t.total_price), 0) AS salesAmount,
+            COALESCE(SUM(t.quantity), 0) AS productCount
+        FROM (
+            SELECT
+                o.total_price,
+                o.quantity,
+                CASE
+                    WHEN MONTH(o.created_at) IN (3,4,5) THEN 1
+                    WHEN MONTH(o.created_at) IN (6,7,8) THEN 2
+                    WHEN MONTH(o.created_at) IN (9,10,11) THEN 3
+                    ELSE 4
+                END AS seasonNum,
+                CASE
+                    WHEN MONTH(o.created_at) IN (3,4,5) THEN '春季'
+                    WHEN MONTH(o.created_at) IN (6,7,8) THEN '夏季'
+                    WHEN MONTH(o.created_at) IN (9,10,11) THEN '秋季'
+                    ELSE '冬季'
+                END AS season
+            FROM `order` o
+            LEFT JOIN product p ON o.product_id = p.id
+            WHERE o.status = 3
+            AND o.created_at BETWEEN #{startTime} AND #{endTime}
+            <if test="merchantId != null">
+                AND p.merchant_id = #{merchantId}
+            </if>
+        ) t
+        GROUP BY t.seasonNum, t.season
+        ORDER BY t.seasonNum ASC
+    </select>
+
+    <!-- 按月份查询销售统计 -->
+    <select id="selectMonthlySales" resultType="org.example.springboot.entity.dto.statistics.SeasonalSalesDTO">
+        SELECT
+            t.month,
+            CONCAT(t.month, '月') AS monthName,
+            COUNT(*) AS orderCount,
+            COALESCE(SUM(t.total_price), 0) AS salesAmount,
+            COALESCE(SUM(t.quantity), 0) AS productCount
+        FROM (
+            SELECT
+                MONTH(o.created_at) AS month,
+                o.total_price,
+                o.quantity
+            FROM `order` o
+            LEFT JOIN product p ON o.product_id = p.id
+            WHERE o.status = 3
+            AND o.created_at BETWEEN #{startTime} AND #{endTime}
+            <if test="merchantId != null">
+                AND p.merchant_id = #{merchantId}
+            </if>
+        ) t
+        GROUP BY t.month
+        ORDER BY t.month ASC
+    </select>
+
+    <!-- 按地区查询销售统计 -->
+    <select id="selectRegionSales" resultType="org.example.springboot.entity.dto.statistics.RegionSalesDTO">
+        SELECT
+            t.region,
+            COUNT(*) AS orderCount,
+            COALESCE(SUM(t.total_price), 0) AS salesAmount,
+            COALESCE(SUM(t.quantity), 0) AS productCount,
+            COUNT(DISTINCT t.user_id) AS userCount
+        FROM (
+            SELECT
+                o.total_price,
+                o.quantity,
+                o.user_id,
+                CASE
+                    WHEN o.recv_address LIKE '北京%' THEN '北京'
+                    WHEN o.recv_address LIKE '上海%' THEN '上海'
+                    WHEN o.recv_address LIKE '天津%' THEN '天津'
+                    WHEN o.recv_address LIKE '重庆%' THEN '重庆'
+                    WHEN o.recv_address LIKE '河北%' THEN '河北'
+                    WHEN o.recv_address LIKE '山西%' THEN '山西'
+                    WHEN o.recv_address LIKE '辽宁%' THEN '辽宁'
+                    WHEN o.recv_address LIKE '吉林%' THEN '吉林'
+                    WHEN o.recv_address LIKE '黑龙江%' THEN '黑龙江'
+                    WHEN o.recv_address LIKE '江苏%' THEN '江苏'
+                    WHEN o.recv_address LIKE '浙江%' THEN '浙江'
+                    WHEN o.recv_address LIKE '安徽%' THEN '安徽'
+                    WHEN o.recv_address LIKE '福建%' THEN '福建'
+                    WHEN o.recv_address LIKE '江西%' THEN '江西'
+                    WHEN o.recv_address LIKE '山东%' THEN '山东'
+                    WHEN o.recv_address LIKE '河南%' THEN '河南'
+                    WHEN o.recv_address LIKE '湖北%' THEN '湖北'
+                    WHEN o.recv_address LIKE '湖南%' THEN '湖南'
+                    WHEN o.recv_address LIKE '广东%' THEN '广东'
+                    WHEN o.recv_address LIKE '海南%' THEN '海南'
+                    WHEN o.recv_address LIKE '四川%' THEN '四川'
+                    WHEN o.recv_address LIKE '贵州%' THEN '贵州'
+                    WHEN o.recv_address LIKE '云南%' THEN '云南'
+                    WHEN o.recv_address LIKE '陕西%' THEN '陕西'
+                    WHEN o.recv_address LIKE '甘肃%' THEN '甘肃'
+                    WHEN o.recv_address LIKE '青海%' THEN '青海'
+                    WHEN o.recv_address LIKE '台湾%' THEN '台湾'
+                    WHEN o.recv_address LIKE '内蒙古%' THEN '内蒙古'
+                    WHEN o.recv_address LIKE '广西%' THEN '广西'
+                    WHEN o.recv_address LIKE '西藏%' THEN '西藏'
+                    WHEN o.recv_address LIKE '宁夏%' THEN '宁夏'
+                    WHEN o.recv_address LIKE '新疆%' THEN '新疆'
+                    WHEN o.recv_address LIKE '香港%' THEN '香港'
+                    WHEN o.recv_address LIKE '澳门%' THEN '澳门'
+                    WHEN o.recv_address IS NOT NULL AND o.recv_address != '' THEN SUBSTRING(o.recv_address, 1, 2)
+                    ELSE '其他'
+                END AS region
+            FROM `order` o
+            LEFT JOIN product p ON o.product_id = p.id
+            WHERE o.status = 3
+            AND o.recv_address IS NOT NULL
+            AND o.recv_address != ''
+            AND o.created_at BETWEEN #{startTime} AND #{endTime}
+            <if test="merchantId != null">
+                AND p.merchant_id = #{merchantId}
+            </if>
+        ) t
+        GROUP BY t.region
+        ORDER BY COUNT(*) DESC
+    </select>
+
+</mapper>
