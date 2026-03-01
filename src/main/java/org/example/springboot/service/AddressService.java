@@ -4,9 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.Address;
-import org.example.springboot.entity.User;
 import org.example.springboot.mapper.AddressMapper;
-import org.example.springboot.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,9 +18,6 @@ public class AddressService {
 
     @Autowired
     private AddressMapper addressMapper;
-
-    @Autowired
-    private UserMapper userMapper;
 
     public Result<?> createAddress(Address address) {
         try {
@@ -70,8 +65,6 @@ public class AddressService {
     public Result<?> getAddressById(Long id) {
         Address address = addressMapper.selectById(id);
         if (address != null) {
-            // 填充用户信息
-            address.setUser(userMapper.selectById(address.getUserId()));
             return Result.success(address);
         }
         return Result.error("-1", "未找到地址");
@@ -81,14 +74,8 @@ public class AddressService {
         LambdaQueryWrapper<Address> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(Address::getUserId, userId);
         List<Address> addresses = addressMapper.selectList(queryWrapper);
-        if (addresses != null && !addresses.isEmpty()) {
-            // 填充用户信息
-            addresses.forEach(address -> 
-                address.setUser(userMapper.selectById(address.getUserId()))
-            );
-            return Result.success(addresses);
-        }
-        return Result.error("-1", "未找到地址");
+        // 如果没有地址，返回空数组而不是错误
+        return Result.success(addresses != null ? addresses : new java.util.ArrayList<>());
     }
 
     public Result<?> getAddressesByPage(Long userId, Integer currentPage, Integer size) {
@@ -99,11 +86,6 @@ public class AddressService {
 
         Page<Address> page = new Page<>(currentPage, size);
         Page<Address> result = addressMapper.selectPage(page, queryWrapper);
-
-        // 填充用户信息
-        result.getRecords().forEach(address -> 
-            address.setUser(userMapper.selectById(address.getUserId()))
-        );
 
         return Result.success(result);
     }

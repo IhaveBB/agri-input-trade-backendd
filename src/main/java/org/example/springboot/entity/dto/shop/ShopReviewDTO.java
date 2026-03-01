@@ -31,9 +31,6 @@ public class ShopReviewDTO implements Serializable {
     /** 评价内容 */
     private String content;
 
-    /** 评价图片 */
-    private String imageUrl;
-
     /** 创建时间 */
     private String createdAt;
 }

@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.Order;
+import org.example.springboot.entity.OrderBatchRequest;
 import org.example.springboot.enumClass.UserRole;
 import org.example.springboot.mapper.OrderMapper;
 import org.example.springboot.service.OrderService;
@@ -259,5 +260,21 @@ public class OrderController {
         }
         // 返回订单状态
         return Result.success(order.getStatus());
+    }
+
+    @Operation(summary = "批量创建订单（从购物车下单）")
+    @PostMapping("/batch")
+    public Result<?> batchCreateOrders(@RequestBody OrderBatchRequest request) {
+        Long currentUserId = UserContext.getUserId();
+        if (currentUserId == null) {
+            return Result.error("-1", "用户未登录");
+        }
+
+        // 验证用户 ID 是否匹配
+        if (!currentUserId.equals(request.getUserId())) {
+            return Result.error("-1", "用户 ID 不匹配");
+        }
+
+        return orderService.batchCreateOrders(request);
     }
 } 

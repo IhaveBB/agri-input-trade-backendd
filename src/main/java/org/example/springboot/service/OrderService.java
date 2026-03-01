@@ -6,8 +6,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.Order;
+import org.example.springboot.entity.OrderBatchRequest;
 import org.example.springboot.entity.Product;
 import org.example.springboot.entity.Logistics;
+import org.example.springboot.entity.Address;
 import org.example.springboot.mapper.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -461,6 +463,66 @@ public class OrderService {
         } catch (Exception e) {
             LOGGER.error("处理退款失败：{}", e.getMessage());
             return Result.error("-1", "处理退款失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 批量创建订单（从购物车下单）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Result<?> batchCreateOrders(OrderBatchRequest request) {
+        try {
+            if (request.getItems() == null || request.getItems().isEmpty()) {
+                return Result.error("-1", "订单商品不能为空");
+            }
+
+            // 获取收货地址信息
+            Address address = addressMapper.selectById(request.getAddressId());
+            if (address == null) {
+                return Result.error("-1", "收货地址不存在");
+            }
+
+            // 批量创建订单
+            for (OrderBatchRequest.OrderItem item : request.getItems()) {
+                // 检查商品是否存在和库存是否充足
+                Product product = productMapper.selectById(item.getProductId());
+                if (product == null) {
+                    throw new RuntimeException("商品不存在：ID=" + item.getProductId());
+                }
+                if (product.getStock() < item.getQuantity()) {
+                    throw new RuntimeException("库存不足：商品 ID=" + item.getProductId() + ", 需要=" + item.getQuantity() + ", 库存=" + product.getStock());
+                }
+
+                // 创建订单
+                Order order = new Order();
+                order.setUserId(request.getUserId());
+                order.setProductId(item.getProductId());
+                order.setQuantity(item.getQuantity());
+                order.setPrice(item.getPrice());
+                order.setTotalPrice(item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+                order.setStatus(0); // 待支付
+                order.setRecvName(address.getReceiver());
+                order.setRecvPhone(address.getPhone());
+                order.setRecvAddress(address.getAddress());
+
+                int result = orderMapper.insert(order);
+                if (result <= 0) {
+                    throw new RuntimeException("创建订单失败：商品 ID=" + item.getProductId());
+                }
+
+                // 更新商品库存和销量
+                product.setStock(product.getStock() - item.getQuantity());
+                product.setSalesCount(product.getSalesCount() + item.getQuantity());
+                productMapper.updateById(product);
+
+                LOGGER.info("批量创建订单成功，商品 ID：{}", item.getProductId());
+            }
+
+            LOGGER.info("批量创建订单完成，用户 ID：{}，订单数量：{}", request.getUserId(), request.getItems().size());
+            return Result.success();
+        } catch (Exception e) {
+            LOGGER.error("批量创建订单失败：{}", e.getMessage());
+            return Result.error("-1", "批量创建订单失败：" + e.getMessage());
         }
     }
 } 

@@ -35,13 +35,13 @@ public class JacksonConfig {
 
             builder.modules(module);
 
-            // 处理Map中null key的问题，将null key转换为空字符串
-            builder.serializerByType(Map.class, new JsonSerializer<Object>() {
-                @Override
-                public void serialize(Object value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
-                    gen.writeObject(value);
-                }
-            });
+//            // 处理Map中null key的问题，将null key转换为空字符串
+//            builder.serializerByType(Map.class, new JsonSerializer<Object>() {
+//                @Override
+//                public void serialize(Object value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+//                    gen.writeObject(value);
+//                }
+//            });
         };
     }
 } 

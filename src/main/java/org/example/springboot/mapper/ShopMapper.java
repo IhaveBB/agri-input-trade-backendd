@@ -25,7 +25,7 @@ public interface ShopMapper {
             "SUM(CASE WHEN r.rating <= 2 THEN 1 ELSE 0 END) as badReviewCount " +
             "FROM review r " +
             "JOIN product p ON r.product_id = p.id " +
-            "WHERE p.merchant_id = #{merchantId} AND r.deleted = 0")
+            "WHERE p.merchant_id = #{merchantId}")
     ShopStatisticsDTO getShopStatistics(@Param("merchantId") Long merchantId);
 
     /**
@@ -33,11 +33,11 @@ public interface ShopMapper {
      */
     @Select("<script>" +
             "SELECT r.id, r.user_id, u.username, r.product_id, p.name as productName, " +
-            "r.rating, r.content, r.image_url as imageUrl, r.created_at " +
+            "r.rating, r.content, r.created_at " +
             "FROM review r " +
             "JOIN product p ON r.product_id = p.id " +
             "JOIN user u ON r.user_id = u.id " +
-            "WHERE p.merchant_id = #{merchantId} AND r.deleted = 0 " +
+            "WHERE p.merchant_id = #{merchantId} " +
             "ORDER BY r.created_at DESC " +
             "<if test='offset != null and limit != null'>" +
             "LIMIT #{offset}, #{limit}" +
