@@ -8,7 +8,10 @@ import org.aspectj.lang.annotation.Pointcut;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.Cart;
 import org.example.springboot.entity.Favorite;
+import org.example.springboot.entity.Order;
 import org.example.springboot.entity.Product;
+import org.example.springboot.mapper.OrderMapper;
+import org.example.springboot.mapper.ProductMapper;
 import org.example.springboot.service.RecommendActionService;
 import org.example.springboot.util.UserContext;
 import org.slf4j.Logger;
@@ -27,6 +30,12 @@ public class RecommendActionAspect {
 
     @Resource
     private RecommendActionService recommendActionService;
+
+    @Resource
+    private ProductMapper productMapper;
+
+    @Resource
+    private OrderMapper orderMapper;
 
     /**
      * 商品详情切入点 - 用户查看商品详情时记录点击
@@ -102,11 +111,20 @@ public class RecommendActionAspect {
                 Favorite favorite = (Favorite) data;
                 if (favorite.getUserId() != null && favorite.getProductId() != null) {
                     // 查询商品获取categoryId
-                    // 这里简化处理，实际可以查询商品服务
+                    Long categoryId = null;
+                    try {
+                        Product product = productMapper.selectById(favorite.getProductId());
+                        if (product != null) {
+                            categoryId = product.getCategoryId();
+                        }
+                    } catch (Exception e) {
+                        LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
+                    }
+
                     recommendActionService.recordCollect(
                             favorite.getUserId(),
                             favorite.getProductId(),
-                            null,
+                            categoryId,
                             "NATURAL", "PRODUCT_DETAIL", null, null
                     );
                     LOGGER.debug("[埋点AOP] 用户{}收藏商品{}", favorite.getUserId(), favorite.getProductId());
@@ -131,10 +149,21 @@ public class RecommendActionAspect {
             if (data instanceof Cart) {
                 Cart cart = (Cart) data;
                 if (cart.getUserId() != null && cart.getProductId() != null) {
+                    // 查询商品获取categoryId
+                    Long categoryId = null;
+                    try {
+                        Product product = productMapper.selectById(cart.getProductId());
+                        if (product != null) {
+                            categoryId = product.getCategoryId();
+                        }
+                    } catch (Exception e) {
+                        LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
+                    }
+
                     recommendActionService.recordCart(
                             cart.getUserId(),
                             cart.getProductId(),
-                            null,
+                            categoryId,
                             "NATURAL", "PRODUCT_DETAIL", null, null
                     );
                     LOGGER.debug("[埋点AOP] 用户{}加购商品{}", cart.getUserId(), cart.getProductId());
@@ -160,9 +189,34 @@ public class RecommendActionAspect {
             Long userId = UserContext.getUserId();
 
             if (userId != null) {
-                // 这里需要查询订单和商品信息
-                // 简化处理，实际可以通过orderId查询
-                LOGGER.debug("[埋点AOP] 用户{}支付订单{}", userId, orderId);
+                try {
+                    // 查询订单获取商品信息
+                    Order order = orderMapper.selectById(orderId);
+                    if (order != null && order.getProductId() != null) {
+                        Long productId = order.getProductId();
+
+                        // 查询商品获取categoryId
+                        Long categoryId = null;
+                        try {
+                            Product product = productMapper.selectById(productId);
+                            if (product != null) {
+                                categoryId = product.getCategoryId();
+                            }
+                        } catch (Exception e) {
+                            LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
+                        }
+
+                        recommendActionService.recordBuy(
+                                userId,
+                                productId,
+                                categoryId,
+                                "NATURAL", "PRODUCT_DETAIL", null, null
+                        );
+                        LOGGER.debug("[埋点AOP] 用户{}支付订单{}, 商品{}", userId, orderId, productId);
+                    }
+                } catch (Exception e) {
+                    LOGGER.warn("[埋点AOP] 记录购买行为失败: {}", e.getMessage());
+                }
             }
         }
 

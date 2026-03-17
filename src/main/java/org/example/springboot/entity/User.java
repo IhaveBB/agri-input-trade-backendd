@@ -40,6 +40,9 @@ public class User {
     @Schema(description = "位置信息")
     private String location;
 
+    @Schema(description = "感兴趣作物/动物分类ID列表，逗号分隔（从注册信息获取）")
+    private String interestedCrops;
+
     @Schema(description = "创建时间")
     private Timestamp createdAt;
 
