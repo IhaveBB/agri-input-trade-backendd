@@ -2,8 +2,9 @@ package org.example.springboot.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import org.example.springboot.common.Result;
 import org.example.springboot.entity.Region;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.RegionMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,69 +20,53 @@ public class RegionService {
     @Autowired
     private RegionMapper regionMapper;
 
-    public Result<?> createRegion(Region region) {
-        try {
-            if (region.getSortOrder() == null) {
-                region.setSortOrder(0);
-            }
-            if (region.getStatus() == null) {
-                region.setStatus(1);
-            }
-            int result = regionMapper.insert(region);
-            if (result > 0) {
-                return Result.success(region);
-            }
-            return Result.error("-1", "创建区域失败");
-        } catch (Exception e) {
-            LOGGER.error("创建区域失败：{}", e.getMessage());
-            return Result.error("-1", "创建区域失败：" + e.getMessage());
+    public Region createRegion(Region region) {
+        if (region.getSortOrder() == null) {
+            region.setSortOrder(0);
         }
+        if (region.getStatus() == null) {
+            region.setStatus(1);
+        }
+        int result = regionMapper.insert(region);
+        if (result > 0) {
+            return region;
+        }
+        throw new BusinessException(ErrorCodeEnum.SYSTEM_ERROR, "创建区域失败");
     }
 
-    public Result<?> updateRegion(Long id, Region region) {
+    public Region updateRegion(Long id, Region region) {
         region.setId(id);
-        try {
-            int result = regionMapper.updateById(region);
-            if (result > 0) {
-                return Result.success(regionMapper.selectById(id));
-            }
-            return Result.error("-1", "更新区域失败");
-        } catch (Exception e) {
-            LOGGER.error("更新区域失败：{}", e.getMessage());
-            return Result.error("-1", "更新区域失败：" + e.getMessage());
+        int result = regionMapper.updateById(region);
+        if (result > 0) {
+            return regionMapper.selectById(id);
         }
+        throw new BusinessException(ErrorCodeEnum.SYSTEM_ERROR, "更新区域失败");
     }
 
-    public Result<?> deleteRegion(Long id) {
-        try {
-            int result = regionMapper.deleteById(id);
-            if (result > 0) {
-                return Result.success();
-            }
-            return Result.error("-1", "删除区域失败");
-        } catch (Exception e) {
-            LOGGER.error("删除区域失败：{}", e.getMessage());
-            return Result.error("-1", "删除区域失败：" + e.getMessage());
+    public void deleteRegion(Long id) {
+        int result = regionMapper.deleteById(id);
+        if (result > 0) {
+            return;
         }
+        throw new BusinessException(ErrorCodeEnum.SYSTEM_ERROR, "删除区域失败");
     }
 
-    public Result<?> getRegionById(Long id) {
+    public Region getRegionById(Long id) {
         Region region = regionMapper.selectById(id);
         if (region != null) {
-            return Result.success(region);
+            return region;
         }
-        return Result.error("-1", "未找到区域");
+        throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "未找到区域");
     }
 
-    public Result<?> getAllRegions() {
+    public List<Region> getAllRegions() {
         LambdaQueryWrapper<Region> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(Region::getStatus, 1);
         queryWrapper.orderByAsc(Region::getSortOrder);
-        List<Region> regions = regionMapper.selectList(queryWrapper);
-        return Result.success(regions);
+        return regionMapper.selectList(queryWrapper);
     }
 
-    public Result<?> getRegionsByPage(String name, Integer currentPage, Integer size) {
+    public Page<Region> getRegionsByPage(String name, Integer currentPage, Integer size) {
         LambdaQueryWrapper<Region> queryWrapper = new LambdaQueryWrapper<>();
         if (name != null && !name.isEmpty()) {
             queryWrapper.like(Region::getName, name);
@@ -89,7 +74,6 @@ public class RegionService {
         queryWrapper.orderByAsc(Region::getSortOrder);
 
         Page<Region> page = new Page<>(currentPage, size);
-        Page<Region> result = regionMapper.selectPage(page, queryWrapper);
-        return Result.success(result);
+        return regionMapper.selectPage(page, queryWrapper);
     }
 }

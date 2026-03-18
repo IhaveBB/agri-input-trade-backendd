@@ -24,31 +24,34 @@ public class CartController {
     @Operation(summary = "添加商品到购物车")
     @PostMapping
     public Result<?> addToCart(@RequestBody Cart cart) {
-        return cartService.addToCart(cart);
+        return Result.success(cartService.addToCart(cart));
     }
 
     @Operation(summary = "更新购物车商品数量")
     @PutMapping("/{id}")
     public Result<?> updateCartItem(@PathVariable Long id, @RequestParam Integer quantity) {
-        return cartService.updateCartItem(id, quantity);
+        cartService.updateCartItem(id, quantity);
+        return Result.success();
     }
 
     @Operation(summary = "删除购物车商品")
     @DeleteMapping("/{id}")
     public Result<?> deleteCartItem(@PathVariable Long id) {
-        return cartService.deleteCartItem(id);
+        cartService.deleteCartItem(id);
+        return Result.success();
     }
 
     @Operation(summary = "根据用户ID获取购物车")
     @GetMapping("/user/{userId}")
     public Result<?> getCartByUserId(@PathVariable Long userId) {
-        return cartService.getCartByUserId(userId);
+        return Result.success(cartService.getCartByUserId(userId));
     }
 
     @Operation(summary = "清空购物车")
     @DeleteMapping("/clear/{userId}")
     public Result<?> clearCart(@PathVariable Long userId) {
-        return cartService.clearCart(userId);
+        cartService.clearCart(userId);
+        return Result.success();
     }
 
     @Operation(summary = "分页查询购物车")
@@ -58,12 +61,13 @@ public class CartController {
             @RequestParam(required = false) String productName,
             @RequestParam(defaultValue = "1") Integer currentPage,
             @RequestParam(defaultValue = "10") Integer size) {
-        return cartService.getCartByPage(userId, productName, currentPage, size);
+        return Result.success(cartService.getCartByPage(userId, productName, currentPage, size));
     }
 
     @Operation(summary = "批量删除购物车项")
     @DeleteMapping("/batch")
     public Result<?> deleteBatch(@RequestParam List<Long> ids) {
-        return cartService.deleteBatch(ids);
+        cartService.deleteBatch(ids);
+        return Result.success();
     }
 } 

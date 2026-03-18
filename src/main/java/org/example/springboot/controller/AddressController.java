@@ -24,31 +24,33 @@ public class AddressController {
     @Operation(summary = "创建地址")
     @PostMapping
     public Result<?> createAddress(@RequestBody Address address) {
-        return addressService.createAddress(address);
+        return Result.success(addressService.createAddress(address));
     }
 
     @Operation(summary = "更新地址信息")
     @PutMapping("/{id}")
     public Result<?> updateAddress(@PathVariable Long id, @RequestBody Address address) {
-        return addressService.updateAddress(id, address);
+        addressService.updateAddress(id, address);
+        return Result.success();
     }
 
     @Operation(summary = "删除地址")
     @DeleteMapping("/{id}")
     public Result<?> deleteAddress(@PathVariable Long id) {
-        return addressService.deleteAddress(id);
+        addressService.deleteAddress(id);
+        return Result.success();
     }
 
     @Operation(summary = "根据ID获取地址详情")
     @GetMapping("/{id}")
     public Result<?> getAddressById(@PathVariable Long id) {
-        return addressService.getAddressById(id);
+        return Result.success(addressService.getAddressById(id));
     }
 
     @Operation(summary = "根据用户ID获取地址列表")
     @GetMapping("/user/{userId}")
     public Result<?> getAddressesByUserId(@PathVariable Long userId) {
-        return addressService.getAddressesByUserId(userId);
+        return Result.success(addressService.getAddressesByUserId(userId));
     }
 
     @Operation(summary = "分页查询地址列表")
@@ -57,12 +59,13 @@ public class AddressController {
             @RequestParam(required = false) Long userId,
             @RequestParam(defaultValue = "1") Integer currentPage,
             @RequestParam(defaultValue = "10") Integer size) {
-        return addressService.getAddressesByPage(userId, currentPage, size);
+        return Result.success(addressService.getAddressesByPage(userId, currentPage, size));
     }
 
     @Operation(summary = "批量删除地址")
     @DeleteMapping("/batch")
     public Result<?> deleteBatch(@RequestParam List<Long> ids) {
-        return addressService.deleteBatch(ids);
+        addressService.deleteBatch(ids);
+        return Result.success();
     }
 } 

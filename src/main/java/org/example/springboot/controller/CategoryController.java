@@ -25,7 +25,7 @@ public class CategoryController {
     @Operation(summary = "创建分类（管理员）")
     @PostMapping
     public Result<?> createCategory(@RequestBody Category category) {
-        return categoryService.createCategory(category, null);
+        return Result.success(categoryService.createCategory(category, null));
     }
 
     @Operation(summary = "商家申请新增自定义分类")
@@ -35,25 +35,27 @@ public class CategoryController {
         if (userId == null) {
             return Result.error("-1", "请先登录");
         }
-        return categoryService.applyCustomCategory(category, userId);
+        return Result.success(categoryService.applyCustomCategory(category, userId));
     }
 
     @Operation(summary = "更新分类信息")
     @PutMapping("/{id}")
     public Result<?> updateCategory(@PathVariable Long id, @RequestBody Category category) {
-        return categoryService.updateCategory(id, category);
+        categoryService.updateCategory(id, category);
+        return Result.success();
     }
 
     @Operation(summary = "删除分类")
     @DeleteMapping("/{id}")
     public Result<?> deleteCategory(@PathVariable Long id) {
-        return categoryService.deleteCategory(id);
+        categoryService.deleteCategory(id);
+        return Result.success();
     }
 
     @Operation(summary = "根据ID获取分类详情")
     @GetMapping("/{id}")
     public Result<?> getCategoryById(@PathVariable Long id) {
-        return categoryService.getCategoryById(id);
+        return Result.success(categoryService.getCategoryById(id));
     }
 
     @Operation(summary = "分页查询分类列表")
@@ -65,36 +67,37 @@ public class CategoryController {
             @RequestParam(required = false) Integer status,
             @RequestParam(defaultValue = "1") Integer currentPage,
             @RequestParam(defaultValue = "10") Integer size) {
-        return categoryService.getCategoriesByPage(name, parentId, level, status, currentPage, size);
+        return Result.success(categoryService.getCategoriesByPage(name, parentId, level, status, currentPage, size));
     }
 
     @Operation(summary = "获取所有分类（平铺列表）")
     @GetMapping("/all")
     public Result<?> getAllCategories() {
-        return categoryService.getAllCategories();
+        return Result.success(categoryService.getAllCategories());
     }
 
     @Operation(summary = "获取分类树形结构")
     @GetMapping("/tree")
     public Result<?> getCategoryTree() {
-        return categoryService.getCategoryTree();
+        return Result.success(categoryService.getCategoryTree());
     }
 
     @Operation(summary = "根据父分类ID获取子分类")
     @GetMapping("/children")
     public Result<?> getCategoriesByParentId(@RequestParam Long parentId) {
-        return categoryService.getCategoriesByParentId(parentId);
+        return Result.success(categoryService.getCategoriesByParentId(parentId));
     }
 
     @Operation(summary = "获取一级分类列表（首页展示）")
     @GetMapping("/top")
     public Result<?> getTopCategories() {
-        return categoryService.getTopCategories();
+        return Result.success(categoryService.getTopCategories());
     }
 
     @Operation(summary = "批量删除分类")
     @DeleteMapping("/batch")
     public Result<?> deleteBatch(@RequestParam List<Long> ids) {
-        return categoryService.deleteBatch(ids);
+        categoryService.deleteBatch(ids);
+        return Result.success();
     }
 }

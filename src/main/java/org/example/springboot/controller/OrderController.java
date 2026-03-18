@@ -3,6 +3,7 @@ package org.example.springboot.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.example.springboot.common.Result;
+import org.example.springboot.entity.Logistics;
 import org.example.springboot.entity.Order;
 import org.example.springboot.entity.OrderBatchRequest;
 import org.example.springboot.enumClass.UserRole;
@@ -27,15 +28,32 @@ public class OrderController {
     @Autowired
     private OrderMapper orderMapper;
 
+    /**
+     * 创建订单
+     *
+     * @param order 订单实体
+     * @return 创建的订单
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "创建订单")
     @PostMapping
-    public Result<?> createOrder(@RequestBody Order order) {
-        return orderService.createOrder(order);
+    public Result<Order> createOrder(@RequestBody Order order) {
+        return Result.success(orderService.createOrder(order));
     }
 
+    /**
+     * 更新订单状态
+     *
+     * @param id     订单ID
+     * @param status 新状态
+     * @return 更新后的订单
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "更新订单状态")
     @PutMapping("/{id}/status")
-    public Result<?> updateOrderStatus(@PathVariable Long id, @RequestParam Integer status) {
+    public Result<Order> updateOrderStatus(@PathVariable Long id, @RequestParam Integer status) {
         Long userId = UserContext.getUserId();
         String role = UserContext.getRole();
 
@@ -67,19 +85,36 @@ public class OrderController {
         }
         // 管理员可以修改任何订单状态
 
-        return orderService.updateOrderStatus(id, status);
+        return Result.success(orderService.updateOrderStatus(id, status));
     }
 
 
-    @Operation(summary = "更新订单状态")
+    /**
+     * 支付订单
+     *
+     * @param id 订单ID
+     * @return 操作结果
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
+    @Operation(summary = "支付订单")
     @PutMapping("/{id}/pay")
-    public Result<?> pay(@PathVariable Long id) {
-        return orderService.payOrder(id);
+    public Result<Void> pay(@PathVariable Long id) {
+        orderService.payOrder(id);
+        return Result.success();
     }
 
+    /**
+     * 删除订单
+     *
+     * @param id 订单ID
+     * @return 操作结果
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "删除订单")
     @DeleteMapping("/{id}")
-    public Result<?> deleteOrder(@PathVariable Long id) {
+    public Result<Void> deleteOrder(@PathVariable Long id) {
         String role = UserContext.getRole();
 
         if (role == null) {
@@ -91,18 +126,35 @@ public class OrderController {
             return Result.error("-1", "无权限删除订单，只有管理员可以删除");
         }
 
-        return orderService.deleteOrder(id);
+        orderService.deleteOrder(id);
+        return Result.success();
     }
 
+    /**
+     * 根据ID获取订单详情
+     *
+     * @param id 订单ID
+     * @return 订单详情
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "根据ID获取订单详情")
     @GetMapping("/{id}")
-    public Result<?> getOrderById(@PathVariable Long id) {
-        return orderService.getOrderById(id);
+    public Result<Order> getOrderById(@PathVariable Long id) {
+        return Result.success(orderService.getOrderById(id));
     }
 
+    /**
+     * 根据用户ID获取订单列表
+     *
+     * @param userId 用户ID
+     * @return 订单列表
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "根据用户ID获取订单列表")
     @GetMapping("/user/{userId}")
-    public Result<?> getOrdersByUserId(@PathVariable Long userId) {
+    public Result<List<Order>> getOrdersByUserId(@PathVariable Long userId) {
         Long currentUserId = UserContext.getUserId();
         String role = UserContext.getRole();
 
@@ -115,9 +167,20 @@ public class OrderController {
             return Result.error("-1", "无权限查看其他用户的订单");
         }
 
-        return orderService.getOrdersByUserId(userId);
+        return Result.success(orderService.getOrdersByUserId(userId));
     }
 
+    /**
+     * 分页查询订单列表
+     *
+     * @param id          订单ID
+     * @param status      订单状态
+     * @param currentPage 当前页
+     * @param size        每页大小
+     * @return 分页订单列表
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "分页查询订单列表")
     @GetMapping("/page")
     public Result<?> getOrdersByPage(
@@ -145,18 +208,35 @@ public class OrderController {
         }
         // 管理员不设置过滤条件，可以查看全部
 
-        return orderService.getOrdersByPage(queryUserId, id, status, merchantId, currentPage, size);
+        return Result.success(orderService.getOrdersByPage(queryUserId, id, status, merchantId, currentPage, size));
     }
 
+    /**
+     * 申请退款
+     *
+     * @param id     订单ID
+     * @param reason 退款原因
+     * @return 更新后的订单
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "申请退款")
     @PostMapping("/{id}/refund")
-    public Result<?> refundOrder(@PathVariable Long id, @RequestParam String reason) {
-        return orderService.refundOrder(id, reason);
+    public Result<Order> refundOrder(@PathVariable Long id, @RequestParam String reason) {
+        return Result.success(orderService.refundOrder(id, reason));
     }
 
+    /**
+     * 批量删除订单
+     *
+     * @param ids 订单ID列表
+     * @return 操作结果
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "批量删除订单")
     @DeleteMapping("/batch")
-    public Result<?> deleteBatch(@RequestParam List<Long> ids) {
+    public Result<Void> deleteBatch(@RequestParam List<Long> ids) {
         String role = UserContext.getRole();
 
         if (role == null) {
@@ -168,12 +248,24 @@ public class OrderController {
             return Result.error("-1", "无权限批量删除订单，只有管理员可以删除");
         }
 
-        return orderService.deleteBatch(ids);
+        orderService.deleteBatch(ids);
+        return Result.success();
     }
 
+    /**
+     * 更新订单收货信息
+     *
+     * @param id      订单ID
+     * @param name    收货人姓名
+     * @param address 收货地址
+     * @param phone   联系电话
+     * @return 更新后的订单
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "更新订单收货信息")
     @PutMapping("/{id}/address")
-    public Result<?> updateOrderAddress(
+    public Result<Order> updateOrderAddress(
             @PathVariable Long id,
             @RequestParam String name,
             @RequestParam String address,
@@ -197,13 +289,21 @@ public class OrderController {
             return Result.error("-1", "无权限修改他人订单的收货信息");
         }
 
-        return orderService.updateOrderAddress(name, id, address, phone);
+        return Result.success(orderService.updateOrderAddress(name, id, address, phone));
     }
 
-    // 更新订单信息
+    /**
+     * 更新订单信息
+     *
+     * @param id    订单ID
+     * @param order 订单实体
+     * @return 更新后的订单
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "更新订单信息")
     @PutMapping("/{id}")
-    public Result<?> updateOrder(@PathVariable Long id, @RequestBody Order order) {
+    public Result<Order> updateOrder(@PathVariable Long id, @RequestBody Order order) {
         Long userId = UserContext.getUserId();
         String role = UserContext.getRole();
 
@@ -229,22 +329,40 @@ public class OrderController {
         }
         // 管理员可以修改任何订单
 
-        return orderService.updateOrder(id, order);
+        return Result.success(orderService.updateOrder(id, order));
     }
 
+    /**
+     * 获取订单物流信息
+     *
+     * @param id 订单ID
+     * @return 物流信息
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "获取订单物流信息")
     @GetMapping("/{id}/logistics")
-    public Result<?> getOrderLogistics(@PathVariable Long id) {
-        return orderService.getOrderLogistics(id);
+    public Result<Logistics> getOrderLogistics(@PathVariable Long id) {
+        return Result.success(orderService.getOrderLogistics(id));
     }
 
+    /**
+     * 处理退款申请
+     *
+     * @param id     订单ID
+     * @param status 退款状态
+     * @param remark 备注
+     * @return 更新后的订单
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "处理退款申请")
     @PutMapping("/{id}/handle-refund")
-    public Result<?> handleRefund(
+    public Result<Order> handleRefund(
             @PathVariable Long id,
             @RequestParam Integer status,
             @RequestParam String remark) {
-        return orderService.handleRefund(id, status, remark);
+        return Result.success(orderService.handleRefund(id, status, remark));
     }
 
     /**
@@ -262,9 +380,17 @@ public class OrderController {
         return Result.success(order.getStatus());
     }
 
+    /**
+     * 批量创建订单（从购物车下单）
+     *
+     * @param request 批量创建订单请求
+     * @return 操作结果
+     * @author IhaveBB
+     * @date 2026/03/18
+     */
     @Operation(summary = "批量创建订单（从购物车下单）")
     @PostMapping("/batch")
-    public Result<?> batchCreateOrders(@RequestBody OrderBatchRequest request) {
+    public Result<Void> batchCreateOrders(@RequestBody OrderBatchRequest request) {
         Long currentUserId = UserContext.getUserId();
         if (currentUserId == null) {
             return Result.error("-1", "用户未登录");
@@ -275,6 +401,7 @@ public class OrderController {
             return Result.error("-1", "用户 ID 不匹配");
         }
 
-        return orderService.batchCreateOrders(request);
+        orderService.batchCreateOrders(request);
+        return Result.success();
     }
 } 

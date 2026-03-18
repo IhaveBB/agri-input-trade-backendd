@@ -33,7 +33,7 @@ public class StockController {
             return Result.error("-1", "无权限创建入库记录");
         }
         stockIn.setOperatorId(userId);
-        return stockService.createStockIn(stockIn);
+        return Result.success(stockService.createStockIn(stockIn));
     }
 
     @Operation(summary = "创建出库记录")
@@ -50,7 +50,7 @@ public class StockController {
             return Result.error("-1", "无权限创建出库记录");
         }
         stockOut.setOperatorId(userId);
-        return stockService.createStockOut(stockOut);
+        return Result.success(stockService.createStockOut(stockOut));
     }
 
     @Operation(summary = "获取入库记录列表")
@@ -109,7 +109,8 @@ public class StockController {
         if (!UserRole.isAdmin(role)) {
             return Result.error("-1", "无权限作废入库记录");
         }
-        return stockService.invalidateStockIn(id);
+        stockService.invalidateStockIn(id);
+        return Result.success();
     }
 
     @Operation(summary = "作废出库记录")
@@ -124,7 +125,8 @@ public class StockController {
         if (!UserRole.isAdmin(role)) {
             return Result.error("-1", "无权限作废出库记录");
         }
-        return stockService.invalidateStockOut(id);
+        stockService.invalidateStockOut(id);
+        return Result.success();
     }
 
     @Operation(summary = "删除入库记录")
@@ -139,7 +141,8 @@ public class StockController {
         if (!UserRole.isAdmin(role)) {
             return Result.error("-1", "无权限删除入库记录");
         }
-        return stockService.deleteStockIn(id);
+        stockService.deleteStockIn(id);
+        return Result.success();
     }
 
     @Operation(summary = "删除出库记录")
@@ -154,6 +157,7 @@ public class StockController {
         if (!UserRole.isAdmin(role)) {
             return Result.error("-1", "无权限删除出库记录");
         }
-        return stockService.deleteStockOut(id);
+        stockService.deleteStockOut(id);
+        return Result.success();
     }
 }

@@ -6,9 +6,10 @@ import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
-import org.example.springboot.common.Result;
 import org.example.springboot.entity.*;
+import org.example.springboot.enums.ErrorCodeEnum;
 import org.example.springboot.enumClass.AccountStatus;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.*;
 import org.example.springboot.util.JwtTokenUtils;
 import org.example.springboot.util.MenusUtils;
@@ -57,18 +58,22 @@ private FavoriteMapper favoriteMapper;
         return userMapper.selectOne(studentLambdaQueryWrapper);
     }
 
-    public Result<?> login(User user){
+    public User login(User user){
         User compare = getByUsername(user.getUsername());
-        if(compare==null)return Result.error("-1","用户不存在");
-        if(compare.getStatus().equals(AccountStatus.DISABLED.getValue()))return Result.error("-1","账号被禁用");
+        if(compare==null){
+            throw new BusinessException(ErrorCodeEnum.USER_NOT_FOUND, "用户不存在");
+        }
+        if(compare.getStatus().equals(AccountStatus.DISABLED.getValue())){
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "账号被禁用");
+        }
         if(compare != null && bCryptPasswordEncoder.matches(user.getPassword(), compare.getPassword())){
             List<Menu> roleMenuList = menuMapper.selectList(null);
             String token = JwtTokenUtils.genToken(String.valueOf(compare.getId()), compare.getPassword());
             compare.setMenuList(MenusUtils.allocMenus(roleMenuList,compare.getRole()));
             compare.setToken(token);
-            return Result.success(compare);
+            return compare;
         }
-        return Result.error("-1","用户名或密码错误",null);
+        throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "用户名或密码错误");
 
     }
     public List<User> getUserByRole(String role) {
@@ -196,7 +201,7 @@ private FavoriteMapper favoriteMapper;
     }
 
     private void deleteUserRelations(int id){
-   
+
                 List<Address> addresses = addressMapper.selectList(new LambdaQueryWrapper<Address>().eq(Address::getUserId, id));
         for (Address address : addresses) {
             if(address!=null){

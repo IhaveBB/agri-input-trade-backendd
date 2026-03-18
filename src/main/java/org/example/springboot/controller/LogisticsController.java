@@ -36,7 +36,7 @@ public class LogisticsController {
         if (!UserRole.isMerchant(role) && !UserRole.isAdmin(role)) {
             return Result.error("-1", "无权限创建物流信息");
         }
-        return logisticsService.createLogistics(logistics);
+        return Result.success(logisticsService.createLogistics(logistics));
     }
 
     @Operation(summary = "更新物流状态")
@@ -51,7 +51,8 @@ public class LogisticsController {
         if (!UserRole.isMerchant(role) && !UserRole.isAdmin(role)) {
             return Result.error("-1", "无权限更新物流状态");
         }
-        return logisticsService.updateLogisticsStatus(id, status);
+        logisticsService.updateLogisticsStatus(id, status);
+        return Result.success();
     }
 
     @Operation(summary = "删除物流信息")
@@ -66,19 +67,20 @@ public class LogisticsController {
         if (!UserRole.isAdmin(role)) {
             return Result.error("-1", "无权限删除物流信息");
         }
-        return logisticsService.deleteLogistics(id);
+        logisticsService.deleteLogistics(id);
+        return Result.success();
     }
 
     @Operation(summary = "根据ID获取物流详情")
     @GetMapping("/{id}")
     public Result<?> getLogisticsById(@PathVariable Long id) {
-        return logisticsService.getLogisticsById(id);
+        return Result.success(logisticsService.getLogisticsById(id));
     }
 
     @Operation(summary = "根据订单ID获取物流信息")
     @GetMapping("/order/{orderId}")
     public Result<?> getLogisticsByOrderId(@PathVariable Long orderId) {
-        return logisticsService.getLogisticsByOrderId(orderId);
+        return Result.success(logisticsService.getLogisticsByOrderId(orderId));
     }
 
     @Operation(summary = "分页查询物流信息")
@@ -98,7 +100,7 @@ public class LogisticsController {
             merchantId = userId;
         }
 
-        return logisticsService.getLogisticsByPage(orderId, merchantId, status, currentPage, size);
+        return Result.success(logisticsService.getLogisticsByPage(orderId, merchantId, status, currentPage, size));
     }
 
     @Operation(summary = "批量删除物流信息")
@@ -113,7 +115,8 @@ public class LogisticsController {
         if (!UserRole.isAdmin(role)) {
             return Result.error("-1", "无权限批量删除物流信息");
         }
-        return logisticsService.deleteBatch(ids);
+        logisticsService.deleteBatch(ids);
+        return Result.success();
     }
 
     @Operation(summary = "确认签收")
@@ -125,6 +128,7 @@ public class LogisticsController {
             return Result.error("-1", "用户未登录");
         }
         // 确认签收应该由订单所有者操作
-        return logisticsService.signLogistics(id, userId);
+        logisticsService.signLogistics(id, userId);
+        return Result.success();
     }
 }

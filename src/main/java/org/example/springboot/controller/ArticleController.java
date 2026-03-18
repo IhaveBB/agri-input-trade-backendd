@@ -24,25 +24,27 @@ public class ArticleController {
     @Operation(summary = "创建资讯")
     @PostMapping
     public Result<?> createArticle(@RequestBody Article article) {
-        return articleService.createArticle(article);
+        return Result.success(articleService.createArticle(article));
     }
 
     @Operation(summary = "更新资讯")
     @PutMapping("/{id}")
     public Result<?> updateArticle(@PathVariable Long id, @RequestBody Article article) {
-        return articleService.updateArticle(id, article);
+        articleService.updateArticle(id, article);
+        return Result.success();
     }
 
     @Operation(summary = "删除资讯")
     @DeleteMapping("/{id}")
     public Result<?> deleteArticle(@PathVariable Long id) {
-        return articleService.deleteArticle(id);
+        articleService.deleteArticle(id);
+        return Result.success();
     }
 
     @Operation(summary = "获取资讯详情")
     @GetMapping("/{id}")
     public Result<?> getArticleById(@PathVariable Long id) {
-        return articleService.getArticleById(id);
+        return Result.success(articleService.getArticleById(id));
     }
 
     @Operation(summary = "分页查询资讯列表")
@@ -58,12 +60,14 @@ public class ArticleController {
     @Operation(summary = "更新资讯状态")
     @PutMapping("/{id}/status")
     public Result<?> updateArticleStatus(@PathVariable Long id, @RequestParam Integer status) {
-        return articleService.updateArticleStatus(id, status);
+        articleService.updateArticleStatus(id, status);
+        return Result.success();
     }
 
     @Operation(summary = "批量删除资讯")
     @DeleteMapping("/batch")
     public Result<?> deleteBatch(@RequestParam List<Long> ids) {
-        return articleService.deleteBatch(ids);
+        articleService.deleteBatch(ids);
+        return Result.success();
     }
 } 

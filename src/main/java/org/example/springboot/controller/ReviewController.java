@@ -24,32 +24,34 @@ public class ReviewController {
     @Operation(summary = "创建评价")
     @PostMapping
     public Result<?> createReview(@RequestBody Review review) {
-        return reviewService.createReview(review);
+        return Result.success(reviewService.createReview(review));
     }
 
     @Operation(summary = "更新评价状态")
     @PutMapping("/{id}/status")
     public Result<?> updateReviewStatus(@PathVariable Long id, @RequestParam Integer status) {
-        return reviewService.updateReviewStatus(id, status);
+        reviewService.updateReviewStatus(id, status);
+        return Result.success();
     }
 
     @Operation(summary = "删除评价")
     @DeleteMapping("/{id}")
     public Result<?> deleteReview(@PathVariable Long id) {
-        return reviewService.deleteReview(id);
+        reviewService.deleteReview(id);
+        return Result.success();
     }
 
     @Operation(summary = "根据ID获取评价详情")
     @GetMapping("/{id}")
     public Result<?> getReviewById(@PathVariable Long id) {
-        return reviewService.getReviewById(id);
+        return Result.success(reviewService.getReviewById(id));
     }
 
 
     @Operation(summary = "根据商品ID获取评价列表")
     @GetMapping("/product/{productId}")
     public Result<?> getReviewsByProductId(@PathVariable Long productId, @RequestParam(required = false) Integer status) {
-        return reviewService.getReviewsByProductId(productId, status);
+        return Result.success(reviewService.getReviewsByProductId(productId, status));
     }
 
     @Operation(summary = "分页查询评价列表")
@@ -63,7 +65,7 @@ public class ReviewController {
             @RequestParam(required = false) Integer status,
             @RequestParam(defaultValue = "1") Integer currentPage,
             @RequestParam(defaultValue = "10") Integer size) {
-        return reviewService.getReviewsByPage(productId, productName,userId,username,merchantId, status, currentPage, size);
+        return Result.success(reviewService.getReviewsByPage(productId, productName,userId,username,merchantId, status, currentPage, size));
     }
 }
 

@@ -3,7 +3,6 @@ package org.example.springboot.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.example.springboot.common.Result;
-import org.example.springboot.enumClass.FileType;
 import org.example.springboot.service.FileService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,7 +27,7 @@ public class FileController {
     @Operation(summary = "文件上传")
     @PostMapping("/upload/img")
     public Result<?> upLoad(@RequestParam("file") MultipartFile file) {
-      return   fileService.upLoad(file, FileType.IMG);
+        return Result.success(fileService.upLoad(file, "img"));
     }
     @Operation(summary = "多文件上传，并且在有失败时删除已上传成功的文件")
     @PostMapping("/uploadMultiple")

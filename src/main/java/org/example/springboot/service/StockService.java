@@ -2,10 +2,11 @@ package org.example.springboot.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import org.example.springboot.common.Result;
 import org.example.springboot.entity.Product;
 import org.example.springboot.entity.StockIn;
 import org.example.springboot.entity.StockOut;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.ProductMapper;
 import org.example.springboot.mapper.StockInMapper;
 import org.example.springboot.mapper.StockOutMapper;
@@ -36,73 +37,63 @@ public class StockService {
     private UserMapper userMapper;
 
     @Transactional
-    public Result<?> createStockIn(StockIn stockIn) {
-        try {
-            // 检查商品是否存在
-            Product product = productMapper.selectById(stockIn.getProductId());
-            if (product == null) {
-                return Result.error("-1", "商品不存在");
-            }
-
-            // 计算总价
-            stockIn.setTotalPrice(stockIn.getUnitPrice().multiply(new BigDecimal(stockIn.getQuantity())));
-
-            // 更新商品库存
-            product.setStock(product.getStock() + stockIn.getQuantity());
-            productMapper.updateById(product);
-
-            // 保存入库记录
-            int result = stockInMapper.insert(stockIn);
-            if (result > 0) {
-                LOGGER.info("创建入库记录成功，入库ID：{}", stockIn.getId());
-                return Result.success(stockIn);
-            }
-            return Result.error("-1", "创建入库记录失败");
-        } catch (Exception e) {
-            LOGGER.error("创建入库记录失败：{}", e.getMessage());
-            return Result.error("-1", "创建入库记录失败：" + e.getMessage());
+    public StockIn createStockIn(StockIn stockIn) {
+        // 检查商品是否存在
+        Product product = productMapper.selectById(stockIn.getProductId());
+        if (product == null) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "商品不存在");
         }
+
+        // 计算总价
+        stockIn.setTotalPrice(stockIn.getUnitPrice().multiply(new BigDecimal(stockIn.getQuantity())));
+
+        // 更新商品库存
+        product.setStock(product.getStock() + stockIn.getQuantity());
+        productMapper.updateById(product);
+
+        // 保存入库记录
+        int result = stockInMapper.insert(stockIn);
+        if (result > 0) {
+            LOGGER.info("创建入库记录成功，入库ID：{}", stockIn.getId());
+            return stockIn;
+        }
+        throw new BusinessException(ErrorCodeEnum.SYSTEM_ERROR, "创建入库记录失败");
     }
 
     @Transactional
-    public Result<?> createStockOut(StockOut stockOut) {
-        try {
-            // 检查商品是否存在
-            Product product = productMapper.selectById(stockOut.getProductId());
-            if (product == null) {
-                return Result.error("-1", "商品不存在");
-            }
-
-            // 检查库存是否足够
-            if (product.getStock() < stockOut.getQuantity()) {
-                return Result.error("-1", "库存不足");
-            }
-
-            // 计算总价
-            stockOut.setTotalPrice(stockOut.getUnitPrice().multiply(new BigDecimal(stockOut.getQuantity())));
-
-            // 更新商品库存
-            product.setStock(product.getStock() - stockOut.getQuantity());
-            productMapper.updateById(product);
-
-            // 保存出库记录
-            int result = stockOutMapper.insert(stockOut);
-            if (result > 0) {
-                LOGGER.info("创建出库记录成功，出库ID：{}", stockOut.getId());
-                return Result.success(stockOut);
-            }
-            return Result.error("-1", "创建出库记录失败");
-        } catch (Exception e) {
-            LOGGER.error("创建出库记录失败：{}", e.getMessage());
-            return Result.error("-1", "创建出库记录失败：" + e.getMessage());
+    public StockOut createStockOut(StockOut stockOut) {
+        // 检查商品是否存在
+        Product product = productMapper.selectById(stockOut.getProductId());
+        if (product == null) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "商品不存在");
         }
+
+        // 检查库存是否足够
+        if (product.getStock() < stockOut.getQuantity()) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "库存不足");
+        }
+
+        // 计算总价
+        stockOut.setTotalPrice(stockOut.getUnitPrice().multiply(new BigDecimal(stockOut.getQuantity())));
+
+        // 更新商品库存
+        product.setStock(product.getStock() - stockOut.getQuantity());
+        productMapper.updateById(product);
+
+        // 保存出库记录
+        int result = stockOutMapper.insert(stockOut);
+        if (result > 0) {
+            LOGGER.info("创建出库记录成功，出库ID：{}", stockOut.getId());
+            return stockOut;
+        }
+        throw new BusinessException(ErrorCodeEnum.SYSTEM_ERROR, "创建出库记录失败");
     }
 
     // 获取入库记录列表
     public Page<StockIn> getStockInList(Long productId, String supplier, Integer status, Long operatorId,
                                       Integer currentPage, Integer size) {
         LambdaQueryWrapper<StockIn> queryWrapper = new LambdaQueryWrapper<>();
-        
+
         if (productId != null) {
             queryWrapper.eq(StockIn::getProductId, productId);
         }
@@ -135,7 +126,7 @@ public class StockService {
                                         String customerName, String orderNo,
                                         Integer currentPage, Integer size) {
         LambdaQueryWrapper<StockOut> queryWrapper = new LambdaQueryWrapper<>();
-        
+
         if (productId != null) {
             queryWrapper.eq(StockOut::getProductId, productId);
         }
@@ -171,123 +162,93 @@ public class StockService {
 
     // 作废入库记录
     @Transactional
-    public Result<?> invalidateStockIn(Long id) {
-        try {
-            StockIn stockIn = stockInMapper.selectById(id);
-            if (stockIn == null) {
-                return Result.error("-1", "入库记录不存在");
-            }
-
-            if (stockIn.getStatus() == 0) {
-                return Result.error("-1", "该记录已作废");
-            }
-
-            // 更新商品库存
-            Product product = productMapper.selectById(stockIn.getProductId());
-            if (product != null) {
-                product.setStock(product.getStock() - stockIn.getQuantity());
-                productMapper.updateById(product);
-            }
-
-            // 更新入库记录状态
-            stockIn.setStatus(0);
-            stockInMapper.updateById(stockIn);
-
-            return Result.success();
-        } catch (Exception e) {
-            LOGGER.error("作废入库记录失败：{}", e.getMessage());
-            return Result.error("-1", "作废入库记录失败：" + e.getMessage());
+    public void invalidateStockIn(Long id) {
+        StockIn stockIn = stockInMapper.selectById(id);
+        if (stockIn == null) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "入库记录不存在");
         }
+
+        if (stockIn.getStatus() == 0) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "该记录已作废");
+        }
+
+        // 更新商品库存
+        Product product = productMapper.selectById(stockIn.getProductId());
+        if (product != null) {
+            product.setStock(product.getStock() - stockIn.getQuantity());
+            productMapper.updateById(product);
+        }
+
+        // 更新入库记录状态
+        stockIn.setStatus(0);
+        stockInMapper.updateById(stockIn);
     }
 
     // 作废出库记录
     @Transactional
-    public Result<?> invalidateStockOut(Long id) {
-        try {
-            StockOut stockOut = stockOutMapper.selectById(id);
-            if (stockOut == null) {
-                return Result.error("-1", "出库记录不存在");
-            }
-
-            if (stockOut.getStatus() == 0) {
-                return Result.error("-1", "该记录已作废");
-            }
-
-            // 更新商品库存
-            Product product = productMapper.selectById(stockOut.getProductId());
-            if (product != null) {
-                product.setStock(product.getStock() + stockOut.getQuantity());
-                productMapper.updateById(product);
-            }
-
-            // 更新出库记录状态
-            stockOut.setStatus(0);
-            stockOutMapper.updateById(stockOut);
-
-            return Result.success();
-        } catch (Exception e) {
-            LOGGER.error("作废出库记录失败：{}", e.getMessage());
-            return Result.error("-1", "作废出库记录失败：" + e.getMessage());
+    public void invalidateStockOut(Long id) {
+        StockOut stockOut = stockOutMapper.selectById(id);
+        if (stockOut == null) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "出库记录不存在");
         }
+
+        if (stockOut.getStatus() == 0) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "该记录已作废");
+        }
+
+        // 更新商品库存
+        Product product = productMapper.selectById(stockOut.getProductId());
+        if (product != null) {
+            product.setStock(product.getStock() + stockOut.getQuantity());
+            productMapper.updateById(product);
+        }
+
+        // 更新出库记录状态
+        stockOut.setStatus(0);
+        stockOutMapper.updateById(stockOut);
     }
 
     // 删除入库记录
     @Transactional
-    public Result<?> deleteStockIn(Long id) {
-        try {
-            StockIn stockIn = stockInMapper.selectById(id);
-            if (stockIn == null) {
-                return Result.error("-1", "入库记录不存在");
-            }
-
-            // 如果记录状态为正常，需要先作废（减少库存）
-            if (stockIn.getStatus() == 1) {
-                Result<?> invalidateResult = invalidateStockIn(id);
-                if (!invalidateResult.getCode().equals("0")) {
-                    return invalidateResult;
-                }
-            }
-
-            // 删除记录
-            int result = stockInMapper.deleteById(id);
-            if (result > 0) {
-                LOGGER.info("删除入库记录成功，入库ID：{}", id);
-                return Result.success();
-            }
-            return Result.error("-1", "删除入库记录失败");
-        } catch (Exception e) {
-            LOGGER.error("删除入库记录失败：{}", e.getMessage());
-            return Result.error("-1", "删除入库记录失败：" + e.getMessage());
+    public void deleteStockIn(Long id) {
+        StockIn stockIn = stockInMapper.selectById(id);
+        if (stockIn == null) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "入库记录不存在");
         }
+
+        // 如果记录状态为正常，需要先作废（减少库存）
+        if (stockIn.getStatus() == 1) {
+            invalidateStockIn(id);
+        }
+
+        // 删除记录
+        int result = stockInMapper.deleteById(id);
+        if (result > 0) {
+            LOGGER.info("删除入库记录成功，入库ID：{}", id);
+            return;
+        }
+        throw new BusinessException(ErrorCodeEnum.SYSTEM_ERROR, "删除入库记录失败");
     }
 
     // 删除出库记录
     @Transactional
-    public Result<?> deleteStockOut(Long id) {
-        try {
-            StockOut stockOut = stockOutMapper.selectById(id);
-            if (stockOut == null) {
-                return Result.error("-1", "出库记录不存在");
-            }
-
-            // 如果记录状态为正常，需要先作废（恢复库存）
-            if (stockOut.getStatus() == 1) {
-                Result<?> invalidateResult = invalidateStockOut(id);
-                if (!invalidateResult.getCode().equals("0")) {
-                    return invalidateResult;
-                }
-            }
-
-            // 删除记录
-            int result = stockOutMapper.deleteById(id);
-            if (result > 0) {
-                LOGGER.info("删除出库记录成功，出库ID：{}", id);
-                return Result.success();
-            }
-            return Result.error("-1", "删除出库记录失败");
-        } catch (Exception e) {
-            LOGGER.error("删除出库记录失败：{}", e.getMessage());
-            return Result.error("-1", "删除出库记录失败：" + e.getMessage());
+    public void deleteStockOut(Long id) {
+        StockOut stockOut = stockOutMapper.selectById(id);
+        if (stockOut == null) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "出库记录不存在");
         }
+
+        // 如果记录状态为正常，需要先作废（恢复库存）
+        if (stockOut.getStatus() == 1) {
+            invalidateStockOut(id);
+        }
+
+        // 删除记录
+        int result = stockOutMapper.deleteById(id);
+        if (result > 0) {
+            LOGGER.info("删除出库记录成功，出库ID：{}", id);
+            return;
+        }
+        throw new BusinessException(ErrorCodeEnum.SYSTEM_ERROR, "删除出库记录失败");
     }
-} 
+}

@@ -4,11 +4,12 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.example.springboot.common.Result;
 import org.example.springboot.entity.*;
 import org.example.springboot.entity.dto.ProductCreateDTO;
 import org.example.springboot.entity.vo.ExtFieldConfigVO;
 import org.example.springboot.entity.vo.ProductVO;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,107 +53,97 @@ public class ProductExtService {
      * 创建商品（含扩展信息）
      */
     @Transactional
-    public Result<ProductVO> createProduct(ProductCreateDTO dto, Long merchantId) {
-        try {
-            // 1. 保存商品主信息
-            Product product = convertToProduct(dto);
-            product.setMerchantId(merchantId);
-            product.setStatus(1);
+    public ProductVO createProduct(ProductCreateDTO dto, Long merchantId) {
+        // 1. 保存商品主信息
+        Product product = convertToProduct(dto);
+        product.setMerchantId(merchantId);
+        product.setStatus(1);
 
-            // 处理扩展属性
-            if (dto.getExtraAttributes() != null) {
-                product.setExtraAttributes(toJson(dto.getExtraAttributes()));
-            }
-
-            int result = productMapper.insert(product);
-            if (result <= 0) {
-                return Result.error("-1", "创建商品失败");
-            }
-
-            Long productId = product.getId();
-
-            // 2. 保存适用作物（使用种子分类ID）
-            if (dto.getCategoryIds() != null && !dto.getCategoryIds().isEmpty()) {
-                saveProductCrops(productId, dto.getCategoryIds());
-            }
-
-            // 3. 保存区域-季节配置
-            if (dto.getRegionSeasonConfigs() != null && !dto.getRegionSeasonConfigs().isEmpty()) {
-                saveProductRegionSeasons(productId, dto.getRegionSeasonConfigs());
-            }
-
-            LOGGER.info("创建商品成功，商品ID：{}，商户ID：{}", productId, merchantId);
-            return Result.success(convertToVO(productMapper.selectById(productId)));
-        } catch (Exception e) {
-            LOGGER.error("创建商品失败：{}", e.getMessage());
-            return Result.error("-1", "创建商品失败：" + e.getMessage());
+        // 处理扩展属性
+        if (dto.getExtraAttributes() != null) {
+            product.setExtraAttributes(toJson(dto.getExtraAttributes()));
         }
+
+        int result = productMapper.insert(product);
+        if (result <= 0) {
+            throw new BusinessException(ErrorCodeEnum.SYSTEM_ERROR, "创建商品失败");
+        }
+
+        Long productId = product.getId();
+
+        // 2. 保存适用作物（使用种子分类ID）
+        if (dto.getCategoryIds() != null && !dto.getCategoryIds().isEmpty()) {
+            saveProductCrops(productId, dto.getCategoryIds());
+        }
+
+        // 3. 保存区域-季节配置
+        if (dto.getRegionSeasonConfigs() != null && !dto.getRegionSeasonConfigs().isEmpty()) {
+            saveProductRegionSeasons(productId, dto.getRegionSeasonConfigs());
+        }
+
+        LOGGER.info("创建商品成功，商品ID：{}，商户ID：{}", productId, merchantId);
+        return convertToVO(productMapper.selectById(productId));
     }
 
     /**
      * 更新商品（含扩展信息）
      */
     @Transactional
-    public Result<ProductVO> updateProduct(Long id, ProductCreateDTO dto) {
-        try {
-            Product existingProduct = productMapper.selectById(id);
-            if (existingProduct == null) {
-                return Result.error("-1", "商品不存在");
-            }
-
-            Product product = convertToProduct(dto);
-            product.setId(id);
-            product.setMerchantId(existingProduct.getMerchantId());
-            product.setCreatedAt(existingProduct.getCreatedAt());
-
-            if (dto.getExtraAttributes() != null) {
-                product.setExtraAttributes(toJson(dto.getExtraAttributes()));
-            } else {
-                product.setExtraAttributes(null);
-            }
-
-            int result = productMapper.updateById(product);
-            if (result <= 0) {
-                return Result.error("-1", "更新商品失败");
-            }
-
-            // 更新适用作物（使用种子分类ID）
-            if (dto.getCategoryIds() != null) {
-                LambdaQueryWrapper<ProductCrop> deleteCropQuery = new LambdaQueryWrapper<>();
-                deleteCropQuery.eq(ProductCrop::getProductId, id);
-                productCropMapper.delete(deleteCropQuery);
-
-                if (!dto.getCategoryIds().isEmpty()) {
-                    saveProductCrops(id, dto.getCategoryIds());
-                }
-            }
-
-            // 更新区域-季节配置
-            if (dto.getRegionSeasonConfigs() != null) {
-                LambdaQueryWrapper<ProductRegionSeason> deleteQuery = new LambdaQueryWrapper<>();
-                deleteQuery.eq(ProductRegionSeason::getProductId, id);
-                productRegionSeasonMapper.delete(deleteQuery);
-
-                if (!dto.getRegionSeasonConfigs().isEmpty()) {
-                    saveProductRegionSeasons(id, dto.getRegionSeasonConfigs());
-                }
-            }
-
-            LOGGER.info("更新商品成功，商品ID：{}", id);
-            return Result.success(convertToVO(productMapper.selectById(id)));
-        } catch (Exception e) {
-            LOGGER.error("更新商品失败：{}", e.getMessage());
-            return Result.error("-1", "更新商品失败：" + e.getMessage());
+    public ProductVO updateProduct(Long id, ProductCreateDTO dto) {
+        Product existingProduct = productMapper.selectById(id);
+        if (existingProduct == null) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "商品不存在");
         }
+
+        Product product = convertToProduct(dto);
+        product.setId(id);
+        product.setMerchantId(existingProduct.getMerchantId());
+        product.setCreatedAt(existingProduct.getCreatedAt());
+
+        if (dto.getExtraAttributes() != null) {
+            product.setExtraAttributes(toJson(dto.getExtraAttributes()));
+        } else {
+            product.setExtraAttributes(null);
+        }
+
+        int result = productMapper.updateById(product);
+        if (result <= 0) {
+            throw new BusinessException(ErrorCodeEnum.SYSTEM_ERROR, "更新商品失败");
+        }
+
+        // 更新适用作物（使用种子分类ID）
+        if (dto.getCategoryIds() != null) {
+            LambdaQueryWrapper<ProductCrop> deleteCropQuery = new LambdaQueryWrapper<>();
+            deleteCropQuery.eq(ProductCrop::getProductId, id);
+            productCropMapper.delete(deleteCropQuery);
+
+            if (!dto.getCategoryIds().isEmpty()) {
+                saveProductCrops(id, dto.getCategoryIds());
+            }
+        }
+
+        // 更新区域-季节配置
+        if (dto.getRegionSeasonConfigs() != null) {
+            LambdaQueryWrapper<ProductRegionSeason> deleteQuery = new LambdaQueryWrapper<>();
+            deleteQuery.eq(ProductRegionSeason::getProductId, id);
+            productRegionSeasonMapper.delete(deleteQuery);
+
+            if (!dto.getRegionSeasonConfigs().isEmpty()) {
+                saveProductRegionSeasons(id, dto.getRegionSeasonConfigs());
+            }
+        }
+
+        LOGGER.info("更新商品成功，商品ID：{}", id);
+        return convertToVO(productMapper.selectById(id));
     }
 
     /**
      * 获取商品详情（含扩展信息）
      */
-    public Result<ProductVO> getProductWithExt(Long id) {
+    public ProductVO getProductWithExt(Long id) {
         Product product = productMapper.selectById(id);
         if (product == null) {
-            return Result.error("-1", "商品不存在");
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "商品不存在");
         }
 
         ProductVO vo = convertToVO(product);
@@ -197,13 +188,13 @@ public class ProductExtService {
             vo.setRegionSeasonList(vos);
         }
 
-        return Result.success(vo);
+        return vo;
     }
 
     /**
      * 获取分类扩展字段配置
      */
-    public Result<List<ExtFieldConfigVO>> getExtFieldsByCategory(Long categoryId) {
+    public List<ExtFieldConfigVO> getExtFieldsByCategory(Long categoryId) {
         List<ExtFieldConfigVO> configs = getExtFieldsConfig();
         if (categoryId != null) {
             // 根据categoryId过滤，返回对应分类的配置
@@ -213,7 +204,7 @@ public class ProductExtService {
                     .filter(c -> c.getCategoryId() != null && c.getCategoryId().longValue() == filterId.longValue())
                     .collect(java.util.stream.Collectors.toList());
         }
-        return Result.success(configs);
+        return configs;
     }
 
     // ==================== 私有方法 ====================

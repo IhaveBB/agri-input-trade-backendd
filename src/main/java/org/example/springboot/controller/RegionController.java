@@ -19,31 +19,33 @@ public class RegionController {
     @Operation(summary = "创建区域")
     @PostMapping
     public Result<?> createRegion(@RequestBody Region region) {
-        return regionService.createRegion(region);
+        return Result.success(regionService.createRegion(region));
     }
 
     @Operation(summary = "更新区域")
     @PutMapping("/{id}")
     public Result<?> updateRegion(@PathVariable Long id, @RequestBody Region region) {
-        return regionService.updateRegion(id, region);
+        regionService.updateRegion(id, region);
+        return Result.success();
     }
 
     @Operation(summary = "删除区域")
     @DeleteMapping("/{id}")
     public Result<?> deleteRegion(@PathVariable Long id) {
-        return regionService.deleteRegion(id);
+        regionService.deleteRegion(id);
+        return Result.success();
     }
 
     @Operation(summary = "获取区域详情")
     @GetMapping("/{id}")
     public Result<?> getRegionById(@PathVariable Long id) {
-        return regionService.getRegionById(id);
+        return Result.success(regionService.getRegionById(id));
     }
 
     @Operation(summary = "获取所有区域（启用状态）")
     @GetMapping("/all")
     public Result<?> getAllRegions() {
-        return regionService.getAllRegions();
+        return Result.success(regionService.getAllRegions());
     }
 
     @Operation(summary = "分页查询区域")
@@ -52,6 +54,6 @@ public class RegionController {
             @RequestParam(required = false) String name,
             @RequestParam(defaultValue = "1") Integer currentPage,
             @RequestParam(defaultValue = "10") Integer size) {
-        return regionService.getRegionsByPage(name, currentPage, size);
+        return Result.success(regionService.getRegionsByPage(name, currentPage, size));
     }
 }

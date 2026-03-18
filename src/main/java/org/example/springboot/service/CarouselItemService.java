@@ -3,9 +3,10 @@ package org.example.springboot.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
-import org.example.springboot.common.Result;
 import org.example.springboot.entity.CarouselItem;
 import org.example.springboot.entity.Product;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.CarouselItemMapper;
 import org.example.springboot.mapper.ProductMapper;
 import org.slf4j.Logger;
@@ -24,98 +25,80 @@ public class CarouselItemService {
     @Resource
     private ProductMapper productMapper;
 
-    public Result<?> createCarouselItem(CarouselItem carouselItem) {
+    public CarouselItem createCarouselItem(CarouselItem carouselItem) {
         // 检查商品是否存在
-        if (carouselItem.getProductId() != null&&carouselItem.getProductId() != 0) {
+        if (carouselItem.getProductId() != null && carouselItem.getProductId() != 0) {
             Product product = productMapper.selectById(carouselItem.getProductId());
             if (product == null) {
-                return Result.error("-1", "关联的商品不存在");
+                throw new BusinessException(ErrorCodeEnum.PRODUCT_NOT_FOUND, "关联的商品不存在");
             }
         }
-        
-        try {
-            carouselItemMapper.insert(carouselItem);
-            LOGGER.info("Created carousel item: {}", carouselItem.getId());
-            return Result.success(carouselItem);
-        } catch (Exception e) {
-            LOGGER.error("Failed to create carousel item", e);
-            return Result.error("-1", "创建轮播图失败");
-        }
+
+        carouselItemMapper.insert(carouselItem);
+        LOGGER.info("Created carousel item: {}", carouselItem.getId());
+        return carouselItem;
     }
 
-    public Result<?> updateCarouselItem(Long id, CarouselItem carouselItem) {
+    public void updateCarouselItem(Long id, CarouselItem carouselItem) {
         CarouselItem existing = carouselItemMapper.selectById(id);
         if (existing == null) {
-            return Result.error("-1", "轮播图不存在");
+            throw new BusinessException(ErrorCodeEnum.CAROUSEL_NOT_FOUND, "轮播图不存在");
         }
 
-
         // 检查商品是否存在
-        if (carouselItem.getProductId() != null&&carouselItem.getProductId() != 0) {
+        if (carouselItem.getProductId() != null && carouselItem.getProductId() != 0) {
             Product product = productMapper.selectById(carouselItem.getProductId());
             if (product == null) {
-                return Result.error("-1", "关联的商品不存在");
+                throw new BusinessException(ErrorCodeEnum.PRODUCT_NOT_FOUND, "关联的商品不存在");
             }
         }
 
         carouselItem.setId(id);
-        try {
-            carouselItemMapper.updateById(carouselItem);
-            LOGGER.info("Updated carousel item: {}", id);
-            return Result.success();
-        } catch (Exception e) {
-            LOGGER.error("Failed to update carousel item: {}", id, e);
-            return Result.error("-1", "更新轮播图失败");
-        }
+        carouselItemMapper.updateById(carouselItem);
+        LOGGER.info("Updated carousel item: {}", id);
     }
 
-    public Result<?> deleteCarouselItem(Long id) {
-        try {
-            carouselItemMapper.deleteById(id);
-            LOGGER.info("Deleted carousel item: {}", id);
-            return Result.success();
-        } catch (Exception e) {
-            LOGGER.error("Failed to delete carousel item: {}", id, e);
-            return Result.error("-1", "删除轮播图失败");
-        }
+    public void deleteCarouselItem(Long id) {
+        carouselItemMapper.deleteById(id);
+        LOGGER.info("Deleted carousel item: {}", id);
     }
 
-    public Result<?> getCarouselItemById(Long id) {
+    public CarouselItem getCarouselItemById(Long id) {
         CarouselItem item = carouselItemMapper.selectById(id);
         if (item != null && item.getProductId() != 0) {
             item.setProduct(productMapper.selectById(item.getProductId()));
         }
-        return Result.success(item);
+        return item;
     }
 
-    public Result<?> getActiveCarouselItems() {
+    public List<CarouselItem> getActiveCarouselItems() {
         LambdaQueryWrapper<CarouselItem> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(CarouselItem::getStatus, 1)
                    .orderByAsc(CarouselItem::getSortOrder);
         List<CarouselItem> items = carouselItemMapper.selectList(queryWrapper);
-        
+
         // 填充商品信息
         for (CarouselItem item : items) {
-            if (item.getProductId()!=null&&item.getProductId() != 0) {
+            if (item.getProductId() != null && item.getProductId() != 0) {
                 item.setProduct(productMapper.selectById(item.getProductId()));
             }
         }
-        
-        return Result.success(items);
+
+        return items;
     }
 
-    public Result<?> getCarouselItemsByPage(Integer currentPage, Integer size) {
+    public Page<CarouselItem> getCarouselItemsByPage(Integer currentPage, Integer size) {
         Page<CarouselItem> page = new Page<>(currentPage, size);
-        Page<CarouselItem> result = carouselItemMapper.selectPage(page, 
+        Page<CarouselItem> result = carouselItemMapper.selectPage(page,
             new LambdaQueryWrapper<CarouselItem>().orderByAsc(CarouselItem::getSortOrder));
-        
+
         // 填充商品信息
         for (CarouselItem item : result.getRecords()) {
-            if (item.getProductId()!=null&&item.getProductId() != 0) {
+            if (item.getProductId() != null && item.getProductId() != 0) {
                 item.setProduct(productMapper.selectById(item.getProductId()));
             }
         }
-        
-        return Result.success(result);
+
+        return result;
     }
-} 
+}

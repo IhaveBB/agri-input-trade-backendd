@@ -69,7 +69,7 @@ public class UserController {
     @Operation(summary = "登录")
     @PostMapping("/login")
     public Result<?> login(@RequestBody User user) {
-        return userService.login(user);
+        return Result.success(userService.login(user));
 
     }
 
