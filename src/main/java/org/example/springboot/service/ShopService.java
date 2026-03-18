@@ -7,6 +7,8 @@ import org.example.springboot.entity.User;
 import org.example.springboot.entity.dto.shop.ShopDTO;
 import org.example.springboot.entity.dto.shop.ShopReviewDTO;
 import org.example.springboot.entity.dto.shop.ShopStatisticsDTO;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.ProductMapper;
 import org.example.springboot.mapper.ShopMapper;
 import org.example.springboot.mapper.UserMapper;
@@ -40,7 +42,7 @@ public class ShopService {
     public ShopDTO getShopInfo(Long merchantId) {
         User merchant = userMapper.selectById(merchantId);
         if (merchant == null) {
-            return null;
+            throw new BusinessException(ErrorCodeEnum.USER_NOT_FOUND, "商户不存在");
         }
 
         ShopDTO dto = new ShopDTO();

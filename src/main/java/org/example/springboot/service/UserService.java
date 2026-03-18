@@ -81,75 +81,101 @@ private FavoriteMapper favoriteMapper;
         queryWrapper.eq(User::getRole, role);
         return userMapper.selectList(queryWrapper);
     }
-    public int createUser(User user) {
+    public void createUser(User user) {
         if (userMapper.selectOne(new QueryWrapper<User>().eq("username", user.getUsername())) != null) {
-            return -1;
+            throw new BusinessException(ErrorCodeEnum.ALREADY_EXISTS, "用户名已存在");
         }
         if (userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getEmail, user.getEmail())) != null) {
-            return -2;
+            throw new BusinessException(ErrorCodeEnum.ALREADY_EXISTS, "邮箱已存在");
         }
         user.setPassword(StringUtils.isNotBlank(user.getPassword()) ? user.getPassword() : DEFAULT_PWD);
         user.setPassword(bCryptPasswordEncoder.encode(user.getPassword()));
         user.setRole(StringUtils.isNotBlank(user.getRole()) ? user.getRole() : "USER");
         user.setStatus(AccountStatus.ENABLED.getValue());
-        return userMapper.insert(user);
+        int result = userMapper.insert(user);
+        if (result <= 0) {
+            throw new BusinessException(ErrorCodeEnum.ERROR, "创建用户失败");
+        }
     }
-    public Integer deleteUserById(int id) {
-
+    public void deleteUserById(int id) {
         deleteUserRelations(id);
         if(!checkStockRelation(id)){
-            return -2;
+            throw new BusinessException(ErrorCodeEnum.HAS_ASSOCIATED_DATA, "删除失败，请检查关联库存");
         }
         if(!checkUserProducts(id)){
-            return -1;
+            throw new BusinessException(ErrorCodeEnum.HAS_ASSOCIATED_DATA, "删除失败，请检查关联商品");
         }
-        return userMapper.deleteById(id);
+        int result = userMapper.deleteById(id);
+        if (result <= 0) {
+            throw new BusinessException(ErrorCodeEnum.ERROR, "删除用户失败");
+        }
     }
-    public boolean updateUser(Long id, User user) {
+    public void updateUser(Long id, User user) {
         user.setId(id);
-        return userMapper.updateById(user) > 0;
+        int result = userMapper.updateById(user);
+        if (result <= 0) {
+            throw new BusinessException(ErrorCodeEnum.ERROR, "更新用户失败");
+        }
     }
-    public User getByUsername(String  username){
-        return userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername,username));
+    public User getByUsername(String username) {
+        User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
+        if (user == null) {
+            throw new BusinessException(ErrorCodeEnum.USER_NOT_FOUND);
+        }
+        return user;
     }
-    public boolean forgetPassword(String email, String newPassword) {
+    public void forgetPassword(String email, String newPassword) {
         User oldUser = userMapper.selectOne(new QueryWrapper<User>().eq("email", email));
-        if (oldUser != null) {
-            oldUser.setPassword(bCryptPasswordEncoder.encode(newPassword));
-            return userMapper.updateById(oldUser) > 0;
+        if (oldUser == null) {
+            throw new BusinessException(ErrorCodeEnum.USER_NOT_FOUND, "用户不存在");
         }
-        return false;
+        oldUser.setPassword(bCryptPasswordEncoder.encode(newPassword));
+        int result = userMapper.updateById(oldUser);
+        if (result <= 0) {
+            throw new BusinessException(ErrorCodeEnum.ERROR, "密码重置失败");
+        }
     }
 
-    public boolean updateUserLocation(Long userId, String location) {
+    public void updateUserLocation(Long userId, String location) {
         User user = userMapper.selectById(userId);
-        if (user != null) {
-            user.setLocation(location);
-            return userMapper.updateById(user) > 0;
+        if (user == null) {
+            throw new BusinessException(ErrorCodeEnum.USER_NOT_FOUND);
         }
-        return false;
+        user.setLocation(location);
+        int result = userMapper.updateById(user);
+        if (result <= 0) {
+            throw new BusinessException(ErrorCodeEnum.ERROR, "更新位置失败");
+        }
     }
 
-    public boolean updatePassword(int id, UserPasswordUpdate userPasswordUpdate) {
+    public void updatePassword(int id, UserPasswordUpdate userPasswordUpdate) {
         User oldUser = userMapper.selectById(id);
-        if (oldUser != null &&bCryptPasswordEncoder.matches(userPasswordUpdate.getOldPassword(),oldUser.getPassword())) {
-            oldUser.setPassword(bCryptPasswordEncoder.encode(userPasswordUpdate.getNewPassword()));
-            return userMapper.updateById(oldUser) > 0;
+        if (oldUser == null) {
+            throw new BusinessException(ErrorCodeEnum.USER_NOT_FOUND);
         }
-
-        return false;
+        if (!bCryptPasswordEncoder.matches(userPasswordUpdate.getOldPassword(), oldUser.getPassword())) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "原密码错误");
+        }
+        oldUser.setPassword(bCryptPasswordEncoder.encode(userPasswordUpdate.getNewPassword()));
+        int result = userMapper.updateById(oldUser);
+        if (result <= 0) {
+            throw new BusinessException(ErrorCodeEnum.ERROR, "密码修改失败");
+        }
     }
-    public Integer deleteBatch(List<Integer> ids) {
+    public void deleteBatch(List<Integer> ids) {
         for (Integer id : ids) {
             deleteUserRelations(id);
             if(!checkStockRelation(id)){
-                return -2;
-            };
+                throw new BusinessException(ErrorCodeEnum.HAS_ASSOCIATED_DATA, "删除失败，请检查关联库存");
+            }
             if(!checkUserProducts(id)){
-                return -1;
+                throw new BusinessException(ErrorCodeEnum.HAS_ASSOCIATED_DATA, "删除失败，请检查关联商品");
             }
         }
-        return userMapper.deleteByIds(ids) ;
+        int result = userMapper.deleteByIds(ids);
+        if (result <= 0) {
+            throw new BusinessException(ErrorCodeEnum.ERROR, "批量删除用户失败");
+        }
     }
 
     public List<User> getAllUsers() {
@@ -157,10 +183,13 @@ private FavoriteMapper favoriteMapper;
     }
     public User getUserById(int id) {
         User user = userMapper.selectById(id);
-        if (user != null && user.getStatus().equals(AccountStatus.ENABLED.getValue())) {
-            return user;
+        if (user == null) {
+            throw new BusinessException(ErrorCodeEnum.USER_NOT_FOUND);
         }
-        return null;
+        if (!user.getStatus().equals(AccountStatus.ENABLED.getValue())) {
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "账号已被禁用");
+        }
+        return user;
     }
     public Page<User> getUsersByPage(String username, String name, String role, String status, Integer currentPage, Integer size) {
         LambdaQueryWrapper<User> queryWrapper = Wrappers.lambdaQuery();

@@ -5,6 +5,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.Logistics;
 import org.example.springboot.enumClass.UserRole;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.service.LogisticsService;
 import org.example.springboot.util.UserContext;
 import org.slf4j.Logger;
@@ -30,11 +32,11 @@ public class LogisticsController {
         String role = UserContext.getRole();
 
         if (userId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
         // 只有商户和管理员可以创建物流信息
         if (!UserRole.isMerchant(role) && !UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限创建物流信息");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限创建物流信息");
         }
         return Result.success(logisticsService.createLogistics(logistics));
     }
@@ -45,11 +47,11 @@ public class LogisticsController {
         String role = UserContext.getRole();
 
         if (role == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
         // 只有商户和管理员可以更新物流状态
         if (!UserRole.isMerchant(role) && !UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限更新物流状态");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限更新物流状态");
         }
         logisticsService.updateLogisticsStatus(id, status);
         return Result.success();
@@ -61,11 +63,11 @@ public class LogisticsController {
         String role = UserContext.getRole();
 
         if (role == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
         // 只有管理员可以删除物流信息
         if (!UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限删除物流信息");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限删除物流信息");
         }
         logisticsService.deleteLogistics(id);
         return Result.success();
@@ -109,11 +111,11 @@ public class LogisticsController {
         String role = UserContext.getRole();
 
         if (role == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
         // 只有管理员可以批量删除
         if (!UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限批量删除物流信息");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限批量删除物流信息");
         }
         logisticsService.deleteBatch(ids);
         return Result.success();
@@ -125,7 +127,7 @@ public class LogisticsController {
         Long userId = UserContext.getUserId();
 
         if (userId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
         // 确认签收应该由订单所有者操作
         logisticsService.signLogistics(id, userId);

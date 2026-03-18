@@ -7,6 +7,8 @@ import org.example.springboot.entity.Logistics;
 import org.example.springboot.entity.Order;
 import org.example.springboot.entity.OrderBatchRequest;
 import org.example.springboot.enumClass.UserRole;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.OrderMapper;
 import org.example.springboot.service.OrderService;
 import org.example.springboot.util.UserContext;
@@ -25,8 +27,6 @@ public class OrderController {
 
     @Autowired
     private OrderService orderService;
-    @Autowired
-    private OrderMapper orderMapper;
 
     /**
      * 创建订单
@@ -58,29 +58,26 @@ public class OrderController {
         String role = UserContext.getRole();
 
         if (userId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         // 获取订单信息进行权限验证
-        Order order = orderMapper.selectById(id);
-        if (order == null) {
-            return Result.error("-1", "订单不存在");
-        }
+        Order order = orderService.getOrderById(id);
 
         // 权限检查
         if (UserRole.isUser(role)) {
             // 农户只能修改自己的订单状态，且只能是取消订单
             if (!order.getUserId().equals(userId)) {
-                return Result.error("-1", "无权限修改他人订单");
+                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改他人订单");
             }
             // 农户只能取消订单（状态设为0或其他允许的状态）
             if (status != 0) {
-                return Result.error("-1", "农户只能取消订单");
+                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "农户只能取消订单");
             }
         } else if (UserRole.isMerchant(role)) {
             // 商户只能修改自己店铺订单的状态
             if (!orderService.isOrderBelongToMerchant(order.getId(), userId)) {
-                return Result.error("-1", "无权限修改非自己店铺的订单");
+                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改非自己店铺的订单");
             }
         }
         // 管理员可以修改任何订单状态
@@ -118,12 +115,12 @@ public class OrderController {
         String role = UserContext.getRole();
 
         if (role == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         // 只有管理员可以删除订单
         if (!UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限删除订单，只有管理员可以删除");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限删除订单，只有管理员可以删除");
         }
 
         orderService.deleteOrder(id);
@@ -159,12 +156,12 @@ public class OrderController {
         String role = UserContext.getRole();
 
         if (currentUserId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         // 权限检查：只有管理员可以查看任意用户的订单
         if (UserRole.isUser(role) && !currentUserId.equals(userId)) {
-            return Result.error("-1", "无权限查看其他用户的订单");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限查看其他用户的订单");
         }
 
         return Result.success(orderService.getOrdersByUserId(userId));
@@ -195,7 +192,7 @@ public class OrderController {
         Long merchantId = null;
 
         if (userId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         // 根据角色设置查询条件
@@ -240,12 +237,12 @@ public class OrderController {
         String role = UserContext.getRole();
 
         if (role == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         // 只有管理员可以批量删除订单
         if (!UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限批量删除订单，只有管理员可以删除");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限批量删除订单，只有管理员可以删除");
         }
 
         orderService.deleteBatch(ids);
@@ -275,18 +272,15 @@ public class OrderController {
         String role = UserContext.getRole();
 
         if (userId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         // 获取订单信息
-        Order order = orderMapper.selectById(id);
-        if (order == null) {
-            return Result.error("-1", "订单不存在");
-        }
+        Order order = orderService.getOrderById(id);
 
         // 权限检查：只有订单所有者可以修改收货信息
         if (!order.getUserId().equals(userId) && !UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限修改他人订单的收货信息");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改他人订单的收货信息");
         }
 
         return Result.success(orderService.updateOrderAddress(name, id, address, phone));
@@ -308,23 +302,20 @@ public class OrderController {
         String role = UserContext.getRole();
 
         if (userId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         // 获取订单信息
-        Order existingOrder = orderMapper.selectById(id);
-        if (existingOrder == null) {
-            return Result.error("-1", "订单不存在");
-        }
+        Order existingOrder = orderService.getOrderById(id);
 
         // 权限检查
         if (UserRole.isUser(role)) {
             if (!existingOrder.getUserId().equals(userId)) {
-                return Result.error("-1", "无权限修改他人订单");
+                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改他人订单");
             }
         } else if (UserRole.isMerchant(role)) {
             if (!orderService.isOrderBelongToMerchant(id, userId)) {
-                return Result.error("-1", "无权限修改非自己店铺的订单");
+                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改非自己店铺的订单");
             }
         }
         // 管理员可以修改任何订单
@@ -372,10 +363,7 @@ public class OrderController {
     @Operation(summary = "获取订单状态")
     public Result<Integer> getOrderStatus(@PathVariable Long id) {
         // 查询订单
-        Order order = orderMapper.selectById(id);
-        if (order == null) {
-            return Result.error("-1","订单不存在");
-        }
+        Order order = orderService.getOrderById(id);
         // 返回订单状态
         return Result.success(order.getStatus());
     }
@@ -393,12 +381,12 @@ public class OrderController {
     public Result<Void> batchCreateOrders(@RequestBody OrderBatchRequest request) {
         Long currentUserId = UserContext.getUserId();
         if (currentUserId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         // 验证用户 ID 是否匹配
         if (!currentUserId.equals(request.getUserId())) {
-            return Result.error("-1", "用户 ID 不匹配");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "用户 ID 不匹配");
         }
 
         orderService.batchCreateOrders(request);

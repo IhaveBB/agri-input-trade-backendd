@@ -6,6 +6,8 @@ import org.example.springboot.common.Result;
 import org.example.springboot.entity.StockIn;
 import org.example.springboot.entity.StockOut;
 import org.example.springboot.enumClass.UserRole;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.service.StockService;
 import org.example.springboot.util.UserContext;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,11 +28,11 @@ public class StockController {
         String role = UserContext.getRole();
 
         if (userId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
         // 只有商户和管理员可以创建入库记录
         if (!UserRole.isMerchant(role) && !UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限创建入库记录");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限创建入库记录");
         }
         stockIn.setOperatorId(userId);
         return Result.success(stockService.createStockIn(stockIn));
@@ -43,11 +45,11 @@ public class StockController {
         String role = UserContext.getRole();
 
         if (userId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
         // 只有商户和管理员可以创建出库记录
         if (!UserRole.isMerchant(role) && !UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限创建出库记录");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限创建出库记录");
         }
         stockOut.setOperatorId(userId);
         return Result.success(stockService.createStockOut(stockOut));
@@ -103,11 +105,11 @@ public class StockController {
         String role = UserContext.getRole();
 
         if (role == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
         // 只有管理员可以作废记录
         if (!UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限作废入库记录");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限作废入库记录");
         }
         stockService.invalidateStockIn(id);
         return Result.success();
@@ -119,11 +121,11 @@ public class StockController {
         String role = UserContext.getRole();
 
         if (role == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
         // 只有管理员可以作废记录
         if (!UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限作废出库记录");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限作废出库记录");
         }
         stockService.invalidateStockOut(id);
         return Result.success();
@@ -135,11 +137,11 @@ public class StockController {
         String role = UserContext.getRole();
 
         if (role == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
         // 只有管理员可以删除记录
         if (!UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限删除入库记录");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限删除入库记录");
         }
         stockService.deleteStockIn(id);
         return Result.success();
@@ -151,11 +153,11 @@ public class StockController {
         String role = UserContext.getRole();
 
         if (role == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
         // 只有管理员可以删除记录
         if (!UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限删除出库记录");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限删除出库记录");
         }
         stockService.deleteStockOut(id);
         return Result.success();

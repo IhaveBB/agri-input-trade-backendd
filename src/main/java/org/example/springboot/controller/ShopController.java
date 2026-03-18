@@ -31,11 +31,7 @@ public class ShopController {
     @GetMapping("/info")
     public Result<ShopDTO> getShopInfo(@RequestParam Long merchantId) {
         LOGGER.info("获取店铺信息，merchantId: {}", merchantId);
-        ShopDTO shopInfo = shopService.getShopInfo(merchantId);
-        if (shopInfo == null) {
-            return Result.error("-1", "店铺不存在");
-        }
-        return Result.success(shopInfo);
+        return Result.success(shopService.getShopInfo(merchantId));
     }
 
     @Operation(summary = "获取店铺商品列表")

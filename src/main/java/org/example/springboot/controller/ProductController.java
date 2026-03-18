@@ -4,6 +4,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.Product;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.entity.dto.ProductCreateDTO;
 import org.example.springboot.entity.vo.ExtFieldConfigVO;
 import org.example.springboot.entity.vo.ProductVO;
@@ -45,12 +47,12 @@ public class ProductController {
         String role = UserContext.getRole();
 
         if (userId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         // 只有商户和管理员可以创建商品
         if (!UserRole.isMerchant(role) && !UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限创建商品，只有商户或管理员可以创建");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限创建商品，只有商户或管理员可以创建");
         }
 
         // 设置商品所属商户ID为当前用户ID
@@ -66,11 +68,11 @@ public class ProductController {
         String role = UserContext.getRole();
 
         if (userId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         if (!UserRole.isMerchant(role) && !UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限创建商品，只有商户或管理员可以创建");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限创建商品，只有商户或管理员可以创建");
         }
 
         return Result.success(productExtService.createProduct(dto, userId));
@@ -92,45 +94,45 @@ public class ProductController {
         String role = UserContext.getRole();
 
         if (userId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         Product existingProduct = productService.getProductByIdValue(id);
         if (existingProduct == null) {
-            return Result.error("-1", "商品不存在");
+            throw new BusinessException(ErrorCodeEnum.PRODUCT_NOT_FOUND);
         }
 
         if (UserRole.isUser(role)) {
-            return Result.error("-1", "无权限修改商品");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改商品");
         } else if (UserRole.isMerchant(role)) {
             if (!existingProduct.getMerchantId().equals(userId)) {
-                return Result.error("-1", "无权限修改其他商户的商品");
+                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改其他商户的商品");
             }
         }
 
         return Result.success(productService.updateProduct(id, product));
     }
 
-    @Operation(summary = "更新商品信息（含扩展信息）")
+    @Operation(summary = "更新商品信息（含扩展信息")
     @PutMapping("/ext/{id}")
     public Result<ProductVO> updateProductWithExt(@PathVariable Long id, @RequestBody ProductCreateDTO dto) {
         Long userId = UserContext.getUserId();
         String role = UserContext.getRole();
 
         if (userId == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         Product existingProduct = productService.getProductByIdValue(id);
         if (existingProduct == null) {
-            return Result.error("-1", "商品不存在");
+            throw new BusinessException(ErrorCodeEnum.PRODUCT_NOT_FOUND);
         }
 
         if (UserRole.isUser(role)) {
-            return Result.error("-1", "无权限修改商品");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改商品");
         } else if (UserRole.isMerchant(role)) {
             if (!existingProduct.getMerchantId().equals(userId)) {
-                return Result.error("-1", "无权限修改其他商户的商品");
+                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改其他商户的商品");
             }
         }
 
@@ -164,18 +166,15 @@ public class ProductController {
         String role = UserContext.getRole();
 
         if (role == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         // 获取商品信息
         Product product = productService.getProductByIdValue(id);
-        if (product == null) {
-            return Result.error("-1", "商品不存在");
-        }
 
         // 权限检查：只有管理员可以删除商品
         if (!UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限删除商品，只有管理员可以删除");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限删除商品，只有管理员可以删除");
         }
 
         productService.deleteProduct(id);
@@ -254,12 +253,12 @@ public class ProductController {
         String role = UserContext.getRole();
 
         if (role == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         // 只有管理员可以批量删除商品
         if (!UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限批量删除商品，只有管理员可以删除");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限批量删除商品，只有管理员可以删除");
         }
 
         productService.deleteBatch(ids);
@@ -296,12 +295,12 @@ public class ProductController {
         String role = UserContext.getRole();
 
         if (role == null) {
-            return Result.error("-1", "用户未登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
 
         // 只有管理员可以批量更新商品状态
         if (!UserRole.isAdmin(role)) {
-            return Result.error("-1", "无权限批量更新商品状态，只有管理员可以操作");
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限批量更新商品状态，只有管理员可以操作");
         }
 
         productService.updateBatchStatus(ids, status);

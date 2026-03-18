@@ -32,8 +32,7 @@ public class FileController {
     @Operation(summary = "多文件上传，并且在有失败时删除已上传成功的文件")
     @PostMapping("/uploadMultiple")
     public Result<?> uploadMultiple(@RequestParam("files") List<MultipartFile> files) {
-        List<String> strings = fileService.uploadMultiple(files);
-        return !strings.isEmpty() ? Result.success(strings):Result.error("-1","文件上传失败！");
+        return Result.success(fileService.uploadMultiple(files));
     }
 }
 

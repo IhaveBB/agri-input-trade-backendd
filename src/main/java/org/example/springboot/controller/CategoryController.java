@@ -4,6 +4,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.Category;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.service.CategoryService;
 import org.example.springboot.util.UserContext;
 import org.slf4j.Logger;
@@ -33,7 +35,7 @@ public class CategoryController {
     public Result<?> applyCustomCategory(@RequestBody Category category) {
         Long userId = UserContext.getUserId();
         if (userId == null) {
-            return Result.error("-1", "请先登录");
+            throw new BusinessException(ErrorCodeEnum.UNAUTHORIZED);
         }
         return Result.success(categoryService.applyCustomCategory(category, userId));
     }
