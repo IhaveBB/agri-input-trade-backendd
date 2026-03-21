@@ -52,8 +52,33 @@ public enum UserRole {
 
     /**
      * 判断是否为普通用户
+     *
+     * @param role 角色代码
+     * @return 是否为普通用户
+     * @author IhaveBB
+     * @date 2026/03/19
      */
     public static boolean isUser(String role) {
         return USER.code.equalsIgnoreCase(role);
+    }
+
+    /**
+     * 判断角色是否有效（是否为系统定义的角色）
+     *
+     * @param role 角色代码
+     * @return 是否为有效角色
+     * @author IhaveBB
+     * @date 2026/03/19
+     */
+    public static boolean isValidRole(String role) {
+        if (role == null || role.isEmpty()) {
+            return false;
+        }
+        for (UserRole userRole : values()) {
+            if (userRole.code.equalsIgnoreCase(role)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

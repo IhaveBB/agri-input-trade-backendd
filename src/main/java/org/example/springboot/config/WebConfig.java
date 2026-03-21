@@ -60,7 +60,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/api/user/login")  // 登录接口不需要拦截
                 .excludePathPatterns("/api/user/forget") // 忘记密码接口不需要拦截
                 .excludePathPatterns("/api/user/add")         // 用户信息接口不需要拦截        \
-                .excludePathPatterns("/api/user/{id}")         // 用户信息接口不需要拦截
+                .excludePathPatterns("/api/user/*")             // 用户信息接口不需要拦截（Ant风格匹配）
                 .excludePathPatterns("/api/email/**") // 发送邮件接口不需要拦截
                 .excludePathPatterns("/api/img/**")     // 图片资源接口不需要拦截
                 .excludePathPatterns("/api/file/**")

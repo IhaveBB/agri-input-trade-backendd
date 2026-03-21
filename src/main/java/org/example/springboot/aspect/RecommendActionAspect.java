@@ -21,9 +21,13 @@ import org.springframework.stereotype.Component;
 /**
  * 推荐埋点AOP切面
  * 自动在用户浏览、收藏、加购、购买等行为时记录埋点
+ *
+ * @author IhaveBB
+ * @date 2026/03/19
  */
 @Aspect
 @Component
+@org.springframework.core.annotation.Order(2)  // 确保在权限校验AOP之后执行
 public class RecommendActionAspect {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RecommendActionAspect.class);
@@ -63,34 +67,46 @@ public class RecommendActionAspect {
 
     /**
      * 商品详情埋点 - 记录点击
+     *
+     * @param joinPoint 切点
+     * @return 方法执行结果
+     * @throws Throwable 异常
+     * @author IhaveBB
+     * @date 2026/03/19
      */
     @Around("productDetailPointcut()")
     public Object recordProductClick(ProceedingJoinPoint joinPoint) throws Throwable {
         Object result = joinPoint.proceed();
 
-        // 获取商品ID（第一个参数）
-        Object[] args = joinPoint.getArgs();
-        if (args.length > 0 && args[0] instanceof Long) {
-            Long productId = (Long) args[0];
-            Long userId = UserContext.getUserId();
+        // 埋点逻辑放在try-catch中，确保埋点失败不影响主业务
+        try {
+            // 获取商品ID（第一个参数）
+            Object[] args = joinPoint.getArgs();
+            if (args.length > 0 && args[0] instanceof Long) {
+                Long productId = (Long) args[0];
+                Long userId = UserContext.getUserId();
 
-            if (userId != null && productId != null) {
-                // 从返回结果中获取categoryId
-                if (result != null && result instanceof Result) {
-                    Result<?> resultObj = (Result<?>) result;
-                    Object data = resultObj.getData();
-                    if (data instanceof Product) {
-                        Product product = (Product) data;
-                        Long categoryId = product.getCategoryId();
+                if (userId != null && productId != null) {
+                    // 从返回结果中获取categoryId
+                    if (result != null && result instanceof Result) {
+                        Result<?> resultObj = (Result<?>) result;
+                        Object data = resultObj.getData();
+                        if (data instanceof Product) {
+                            Product product = (Product) data;
+                            Long categoryId = product.getCategoryId();
 
-                        recommendActionService.recordClick(
-                                userId, productId, categoryId,
-                                "NATURAL", "PRODUCT_DETAIL", null, null
-                        );
-                        LOGGER.debug("[埋点AOP] 用户{}点击商品{}", userId, productId);
+                            recommendActionService.recordClick(
+                                    userId, productId, categoryId,
+                                    "NATURAL", "PRODUCT_DETAIL", null, null
+                            );
+                            LOGGER.debug("[埋点AOP] 用户{}点击商品{}", userId, productId);
+                        }
                     }
                 }
             }
+        } catch (Exception e) {
+            // 埋点失败只记录日志，不影响主业务
+            LOGGER.error("[埋点AOP] 记录商品点击埋点失败: {}", e.getMessage(), e);
         }
 
         return result;
@@ -98,38 +114,50 @@ public class RecommendActionAspect {
 
     /**
      * 收藏埋点 - 记录收藏行为
+     *
+     * @param joinPoint 切点
+     * @return 方法执行结果
+     * @throws Throwable 异常
+     * @author IhaveBB
+     * @date 2026/03/19
      */
     @Around("favoritePointcut()")
     public Object recordFavorite(ProceedingJoinPoint joinPoint) throws Throwable {
         Object result = joinPoint.proceed();
 
-        if (result != null && result instanceof Result) {
-            Result<?> resultObj = (Result<?>) result;
-            Object data = resultObj.getData();
+        // 埋点逻辑放在try-catch中，确保埋点失败不影响主业务
+        try {
+            if (result != null && result instanceof Result) {
+                Result<?> resultObj = (Result<?>) result;
+                Object data = resultObj.getData();
 
-            if (data instanceof Favorite) {
-                Favorite favorite = (Favorite) data;
-                if (favorite.getUserId() != null && favorite.getProductId() != null) {
-                    // 查询商品获取categoryId
-                    Long categoryId = null;
-                    try {
-                        Product product = productMapper.selectById(favorite.getProductId());
-                        if (product != null) {
-                            categoryId = product.getCategoryId();
+                if (data instanceof Favorite) {
+                    Favorite favorite = (Favorite) data;
+                    if (favorite.getUserId() != null && favorite.getProductId() != null) {
+                        // 查询商品获取categoryId
+                        Long categoryId = null;
+                        try {
+                            Product product = productMapper.selectById(favorite.getProductId());
+                            if (product != null) {
+                                categoryId = product.getCategoryId();
+                            }
+                        } catch (Exception e) {
+                            LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
                         }
-                    } catch (Exception e) {
-                        LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
-                    }
 
-                    recommendActionService.recordCollect(
-                            favorite.getUserId(),
-                            favorite.getProductId(),
-                            categoryId,
-                            "NATURAL", "PRODUCT_DETAIL", null, null
-                    );
-                    LOGGER.debug("[埋点AOP] 用户{}收藏商品{}", favorite.getUserId(), favorite.getProductId());
+                        recommendActionService.recordCollect(
+                                favorite.getUserId(),
+                                favorite.getProductId(),
+                                categoryId,
+                                "NATURAL", "PRODUCT_DETAIL", null, null
+                        );
+                        LOGGER.debug("[埋点AOP] 用户{}收藏商品{}", favorite.getUserId(), favorite.getProductId());
+                    }
                 }
             }
+        } catch (Exception e) {
+            // 埋点失败只记录日志，不影响主业务
+            LOGGER.error("[埋点AOP] 记录收藏埋点失败: {}", e.getMessage(), e);
         }
 
         return result;
@@ -137,38 +165,50 @@ public class RecommendActionAspect {
 
     /**
      * 购物车埋点 - 记录加购行为
+     *
+     * @param joinPoint 切点
+     * @return 方法执行结果
+     * @throws Throwable 异常
+     * @author IhaveBB
+     * @date 2026/03/19
      */
     @Around("cartPointcut()")
     public Object recordCart(ProceedingJoinPoint joinPoint) throws Throwable {
         Object result = joinPoint.proceed();
 
-        if (result != null && result instanceof Result) {
-            Result<?> resultObj = (Result<?>) result;
-            Object data = resultObj.getData();
+        // 埋点逻辑放在try-catch中，确保埋点失败不影响主业务
+        try {
+            if (result != null && result instanceof Result) {
+                Result<?> resultObj = (Result<?>) result;
+                Object data = resultObj.getData();
 
-            if (data instanceof Cart) {
-                Cart cart = (Cart) data;
-                if (cart.getUserId() != null && cart.getProductId() != null) {
-                    // 查询商品获取categoryId
-                    Long categoryId = null;
-                    try {
-                        Product product = productMapper.selectById(cart.getProductId());
-                        if (product != null) {
-                            categoryId = product.getCategoryId();
+                if (data instanceof Cart) {
+                    Cart cart = (Cart) data;
+                    if (cart.getUserId() != null && cart.getProductId() != null) {
+                        // 查询商品获取categoryId
+                        Long categoryId = null;
+                        try {
+                            Product product = productMapper.selectById(cart.getProductId());
+                            if (product != null) {
+                                categoryId = product.getCategoryId();
+                            }
+                        } catch (Exception e) {
+                            LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
                         }
-                    } catch (Exception e) {
-                        LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
-                    }
 
-                    recommendActionService.recordCart(
-                            cart.getUserId(),
-                            cart.getProductId(),
-                            categoryId,
-                            "NATURAL", "PRODUCT_DETAIL", null, null
-                    );
-                    LOGGER.debug("[埋点AOP] 用户{}加购商品{}", cart.getUserId(), cart.getProductId());
+                        recommendActionService.recordCart(
+                                cart.getUserId(),
+                                cart.getProductId(),
+                                categoryId,
+                                "NATURAL", "PRODUCT_DETAIL", null, null
+                        );
+                        LOGGER.debug("[埋点AOP] 用户{}加购商品{}", cart.getUserId(), cart.getProductId());
+                    }
                 }
             }
+        } catch (Exception e) {
+            // 埋点失败只记录日志，不影响主业务
+            LOGGER.error("[埋点AOP] 记录加购埋点失败: {}", e.getMessage(), e);
         }
 
         return result;
@@ -176,20 +216,27 @@ public class RecommendActionAspect {
 
     /**
      * 支付埋点 - 记录购买行为
+     *
+     * @param joinPoint 切点
+     * @return 方法执行结果
+     * @throws Throwable 异常
+     * @author IhaveBB
+     * @date 2026/03/19
      */
     @Around("payOrderPointcut()")
     public Object recordPurchase(ProceedingJoinPoint joinPoint) throws Throwable {
         // 先执行原方法
         Object result = joinPoint.proceed();
 
-        // 获取订单ID（第一个参数）
-        Object[] args = joinPoint.getArgs();
-        if (args.length > 0 && args[0] instanceof Long) {
-            Long orderId = (Long) args[0];
-            Long userId = UserContext.getUserId();
+        // 埋点逻辑放在try-catch中，确保埋点失败不影响主业务
+        try {
+            // 获取订单ID（第一个参数）
+            Object[] args = joinPoint.getArgs();
+            if (args.length > 0 && args[0] instanceof Long) {
+                Long orderId = (Long) args[0];
+                Long userId = UserContext.getUserId();
 
-            if (userId != null) {
-                try {
+                if (userId != null) {
                     // 查询订单获取商品信息
                     Order order = orderMapper.selectById(orderId);
                     if (order != null && order.getProductId() != null) {
@@ -214,10 +261,11 @@ public class RecommendActionAspect {
                         );
                         LOGGER.debug("[埋点AOP] 用户{}支付订单{}, 商品{}", userId, orderId, productId);
                     }
-                } catch (Exception e) {
-                    LOGGER.warn("[埋点AOP] 记录购买行为失败: {}", e.getMessage());
                 }
             }
+        } catch (Exception e) {
+            // 埋点失败只记录日志，不影响主业务
+            LOGGER.error("[埋点AOP] 记录购买埋点失败: {}", e.getMessage(), e);
         }
 
         return result;

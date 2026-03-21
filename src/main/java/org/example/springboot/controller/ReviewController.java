@@ -2,6 +2,7 @@ package org.example.springboot.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.example.springboot.annotation.RequiresRole;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.Review;
 import org.example.springboot.service.ReviewService;
@@ -21,20 +22,51 @@ public class ReviewController {
     @Autowired
     private ReviewService reviewService;
 
+    /**
+     * 创建评价
+     * 权限：需要登录
+     *
+     * @param review 评价实体
+     * @return 创建结果
+     * @author IhaveBB
+     * @date 2026/03/19
+     */
     @Operation(summary = "创建评价")
+    @RequiresRole
     @PostMapping
     public Result<?> createReview(@RequestBody Review review) {
         return Result.success(reviewService.createReview(review));
     }
 
+    /**
+     * 更新评价状态
+     * 权限：只有管理员
+     *
+     * @param id     评价ID
+     * @param status 状态
+     * @return 操作结果
+     * @author IhaveBB
+     * @date 2026/03/19
+     */
     @Operation(summary = "更新评价状态")
+    @RequiresRole("ADMIN")
     @PutMapping("/{id}/status")
     public Result<?> updateReviewStatus(@PathVariable Long id, @RequestParam Integer status) {
         reviewService.updateReviewStatus(id, status);
         return Result.success();
     }
 
+    /**
+     * 删除评价
+     * 权限：只有管理员
+     *
+     * @param id 评价ID
+     * @return 操作结果
+     * @author IhaveBB
+     * @date 2026/03/19
+     */
     @Operation(summary = "删除评价")
+    @RequiresRole("ADMIN")
     @DeleteMapping("/{id}")
     public Result<?> deleteReview(@PathVariable Long id) {
         reviewService.deleteReview(id);

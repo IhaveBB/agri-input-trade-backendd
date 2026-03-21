@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -18,6 +19,9 @@ import org.springframework.security.web.SecurityFilterChain;
  * - 安全过滤器链
  * - 请求授权规则
  * - CSRF防护配置
+ *
+ * @author IhaveBB
+ * @date 2026/03/19
  */
 @Configuration
 @EnableWebSecurity
@@ -31,10 +35,12 @@ public class SecurityConfig {
      * BCrypt是一种安全的密码哈希函数，自动包含随机盐值
      *
      * @return PasswordEncoder BCrypt密码编码器实例
+     * @author IhaveBB
+     * @date 2026/03/19
      */
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(10);  // 设置加密强度
+        return new BCryptPasswordEncoder(10);
     }
 
     /**
@@ -49,15 +55,17 @@ public class SecurityConfig {
      * @param http HttpSecurity配置对象
      * @return SecurityFilterChain 配置好的安全过滤器链
      * @throws Exception 配置过程中可能发生的异常
+     * @author IhaveBB
+     * @date 2026/03/19
      */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/user/login").permitAll()  // 登录页面无需认证
-                        .anyRequest().permitAll()  // 所有请求都公开访问
+                        .requestMatchers("/user/login").permitAll()
+                        .anyRequest().permitAll()
                 )
-                .csrf().disable();  // 禁用 CSRF 保护（仅用于开发环境）
+                .csrf(AbstractHttpConfigurer::disable);
         return http.build();
     }
 }

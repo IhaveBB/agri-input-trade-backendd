@@ -114,9 +114,8 @@ public class FavoriteService {
                 favorite.setUser(userMapper.selectById(favorite.getUserId()));
                 favorite.setProduct(productMapper.selectById(favorite.getProductId()));
             });
-            return favorites;
         }
-        throw new BusinessException(ErrorCodeEnum.FAVORITE_NOT_FOUND, "未找到收藏记录");
+        return favorites;
     }
 
     public Page<Favorite> getFavoritesByPage(Long userId, Integer currentPage, Integer size) {

@@ -572,11 +572,7 @@ public class OrderService {
                 throw new BusinessException(ErrorCodeEnum.ERROR, "创建订单失败：商品 ID=" + item.getProductId());
             }
 
-            // 更新商品库存和销量
-            product.setStock(product.getStock() - item.getQuantity());
-            product.setSalesCount(product.getSalesCount() + item.getQuantity());
-            productMapper.updateById(product);
-
+            // 注意：库存和销量在支付成功后扣减，不在创建订单时扣减
             LOGGER.info("批量创建订单成功，商品 ID：{}", item.getProductId());
         }
 

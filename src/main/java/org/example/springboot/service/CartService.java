@@ -111,9 +111,8 @@ public class CartService {
                 cart.setUser(userMapper.selectById(cart.getUserId()));
                 cart.setProduct(productMapper.selectById(cart.getProductId()));
             });
-            return carts;
         }
-        throw new BusinessException(ErrorCodeEnum.NOT_FOUND, "未找到购物车记录");
+        return carts;
     }
 
     public void clearCart(Long userId) {
@@ -157,5 +156,17 @@ public class CartService {
         } else {
             throw new BusinessException(ErrorCodeEnum.ERROR, "批量删除购物车项失败");
         }
+    }
+
+    /**
+     * 根据ID获取购物车记录
+     *
+     * @param id 购物车ID
+     * @return 购物车记录
+     * @author IhaveBB
+     * @date 2026/03/19
+     */
+    public Cart getCartById(Long id) {
+        return cartMapper.selectById(id);
     }
 }

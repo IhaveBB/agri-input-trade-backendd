@@ -3,6 +3,8 @@ package org.example.springboot.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.example.springboot.entity.Address;
+import org.example.springboot.entity.dto.AddressCreateDTO;
+import org.example.springboot.entity.dto.AddressUpdateDTO;
 import org.example.springboot.enums.ErrorCodeEnum;
 import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.AddressMapper;
@@ -20,17 +22,42 @@ public class AddressService {
     @Autowired
     private AddressMapper addressMapper;
 
-    public Address createAddress(Address address) {
+    /**
+     * 创建地址
+     *
+     * @param userId 用户ID（从登录上下文获取）
+     * @param dto    地址创建DTO
+     * @return 创建后的地址
+     */
+    public Address createAddress(Long userId, AddressCreateDTO dto) {
+        Address address = new Address();
+        address.setUserId(userId);
+        address.setReceiver(dto.getReceiver());
+        address.setPhone(dto.getPhone());
+        address.setAddress(dto.getAddress());
+
         int result = addressMapper.insert(address);
         if (result > 0) {
-            LOGGER.info("创建地址成功，地址ID：{}", address.getId());
+            LOGGER.info("创建地址成功，用户ID：{}，地址ID：{}", userId, address.getId());
             return address;
         }
         throw new BusinessException(ErrorCodeEnum.ERROR, "创建地址失败");
     }
 
-    public Address updateAddress(Long id, Address address) {
+    /**
+     * 更新地址
+     *
+     * @param id  地址ID
+     * @param dto 地址更新DTO
+     * @return 更新后的地址
+     */
+    public Address updateAddress(Long id, AddressUpdateDTO dto) {
+        Address address = new Address();
         address.setId(id);
+        address.setReceiver(dto.getReceiver());
+        address.setPhone(dto.getPhone());
+        address.setAddress(dto.getAddress());
+
         int result = addressMapper.updateById(address);
         if (result > 0) {
             LOGGER.info("更新地址成功，地址ID：{}", id);
@@ -60,7 +87,6 @@ public class AddressService {
         LambdaQueryWrapper<Address> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(Address::getUserId, userId);
         List<Address> addresses = addressMapper.selectList(queryWrapper);
-        // 如果没有地址，返回空数组
         return addresses != null ? addresses : new java.util.ArrayList<>();
     }
 
@@ -71,9 +97,7 @@ public class AddressService {
         }
 
         Page<Address> page = new Page<>(currentPage, size);
-        Page<Address> result = addressMapper.selectPage(page, queryWrapper);
-
-        return result;
+        return addressMapper.selectPage(page, queryWrapper);
     }
 
     public void deleteBatch(List<Long> ids) {

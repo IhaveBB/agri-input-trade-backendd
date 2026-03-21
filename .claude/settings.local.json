@@ -10,7 +10,12 @@
       "Bash(cmd //c:*)",
       "Bash(javac:*)",
       "Bash(mvn:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(./mvnw compile:*)",
+      "Bash(grep -l private.*Mapper /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src/main/java/org/example/springboot/controller/*.java /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src/main/java/org/example/springboot/controller/**/*.java)",
+      "Bash(grep -r Result.error.*-1 /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src/main/java/org/example/springboot/controller/)",
+      "Bash(grep -r private.*Mapper /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src/main/java/org/example/springboot/controller/)",
+      "Bash(git log:*)"
     ]
   }
 }

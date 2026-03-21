@@ -145,9 +145,8 @@ public class LogisticsService {
         if (logistics != null) {
             // 填充关联信息
             logistics.setOrder(orderMapper.selectById(logistics.getOrderId()));
-            return logistics;
         }
-        throw new BusinessException(ErrorCodeEnum.LOGISTICS_NOT_FOUND, "未找到物流信息");
+        return logistics;
     }
 
     public Page<Logistics> getLogisticsByPage(Long orderId, Long merchantId, Integer status, Integer currentPage, Integer size) {

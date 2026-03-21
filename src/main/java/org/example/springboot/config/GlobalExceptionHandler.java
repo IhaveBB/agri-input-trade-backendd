@@ -27,7 +27,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(UserContext.UserNotLoginException.class)
     public Result<?> handleUserNotLogin(UserContext.UserNotLoginException e) {
-        logger.warn("用户未登录: {}", e.getMessage());
+        logger.warn("用户未登录: {}", e.getMessage(), e);
         return Result.error("-1", "用户未登录，请先登录");
     }
 
@@ -36,7 +36,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(UserContext.PermissionDeniedException.class)
     public Result<?> handlePermissionDenied(UserContext.PermissionDeniedException e) {
-        logger.warn("权限不足: {}", e.getMessage());
+        logger.warn("权限不足: {}", e.getMessage(), e);
         return Result.error("-1", e.getMessage());
     }
 
@@ -48,7 +48,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(BusinessException.class)
     public Result<?> handleBusinessException(BusinessException e) {
-        logger.warn("业务异常: code={}, message={}", e.getCode(), e.getMessage());
+        logger.warn("业务异常: code={}, message={}", e.getCode(), e.getMessage(), e);
         return Result.error(e.getCode(), e.getMessage());
     }
 
@@ -63,7 +63,7 @@ public class GlobalExceptionHandler {
         String message = e.getBindingResult().getFieldErrors().stream()
                 .map(FieldError::getDefaultMessage)
                 .collect(Collectors.joining(", "));
-        logger.warn("参数校验失败: {}", message);
+        logger.warn("参数校验失败: {}", message, e);
         return Result.error(ErrorCodeEnum.PARAM_ERROR.getCode(), message);
     }
 
@@ -75,7 +75,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(IllegalArgumentException.class)
     public Result<?> handleIllegalArgumentException(IllegalArgumentException e) {
-        logger.warn("非法参数: {}", e.getMessage());
+        logger.warn("非法参数: {}", e.getMessage(), e);
         return Result.error(ErrorCodeEnum.PARAM_ERROR.getCode(), e.getMessage());
     }
 
