@@ -5,11 +5,14 @@ import jakarta.annotation.Resource;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.example.springboot.entity.Product;
+import org.example.springboot.entity.User;
 import org.example.springboot.mapper.ProductMapper;
+import org.example.springboot.mapper.UserMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -29,6 +32,9 @@ public class StockWarningService {
 
     @Resource
     private ProductMapper productMapper;
+
+    @Resource
+    private UserMapper userMapper;
 
     /**
      * 阈值策略，默认使用读取配置文件的 {@link DefaultStockThresholdStrategy}
@@ -140,10 +146,23 @@ public class StockWarningService {
 
         List<Product> products = productMapper.selectList(wrapper);
 
-        return products.stream()
+        List<StockWarningDTO> result = products.stream()
                 .map(this::analyzeStockStatus)
                 .filter(dto -> dto.getWarningType() != WarningType.SAFE)
                 .collect(Collectors.toList());
+
+        // 批量查询商户名称
+        List<Long> merchantIds = result.stream()
+                .map(StockWarningDTO::getMerchantId)
+                .filter(id -> id != null)
+                .distinct()
+                .collect(Collectors.toList());
+        if (!merchantIds.isEmpty()) {
+            Map<Long, String> merchantNameMap = userMapper.selectBatchIds(merchantIds).stream()
+                    .collect(Collectors.toMap(User::getId, u -> u.getName() != null ? u.getName() : u.getUsername()));
+            result.forEach(dto -> dto.setMerchantName(merchantNameMap.getOrDefault(dto.getMerchantId(), "")));
+        }
+        return result;
     }
 
     /**
@@ -313,6 +332,8 @@ public class StockWarningService {
         private String productName;
         /** 商户ID */
         private Long merchantId;
+        /** 商户名称 */
+        private String merchantName;
         /** 当前库存 */
         private Integer currentStock;
         /** 预警类型 */

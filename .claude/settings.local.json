@@ -15,7 +15,30 @@
       "Bash(grep -l private.*Mapper /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src/main/java/org/example/springboot/controller/*.java /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src/main/java/org/example/springboot/controller/**/*.java)",
       "Bash(grep -r Result.error.*-1 /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src/main/java/org/example/springboot/controller/)",
       "Bash(grep -r private.*Mapper /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src/main/java/org/example/springboot/controller/)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(grep -n \"CREATE TABLE\\\\|user_id\\\\|product_id\\\\|INSERT INTO \\\\`user\\\\`\\\\|INSERT INTO \\\\`product\\\\`\\\\|INSERT INTO \\\\`favorite\\\\`\\\\|INSERT INTO \\\\`order\\\\`\" /Users/ihavebb/workspace/code/agri-input-trade/agricultural_product_system_stock.sql)",
+      "Bash(grep -A 20 \"CREATE TABLE \\\\`user\\\\`\" /Users/ihavebb/workspace/code/agri-input-trade/agricultural_product_system_stock.sql)",
+      "Bash(grep \"INSERT INTO \\\\`product\\\\`\" /Users/ihavebb/workspace/code/agri-input-trade/agricultural_product_system_stock.sql)",
+      "Bash(mysql:*)",
+      "Read(//usr/local/bin/**)",
+      "Read(//opt/homebrew/**)",
+      "Bash(docker exec:*)",
+      "Bash(find /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src/main/java/org/example/springboot -name \"*.java\" -exec grep -l \"@author agri-input-trade\" {})",
+      "Bash(while read:*)",
+      "Bash(do sed:*)",
+      "Bash(grep -l \"RecommendAction\\\\|recommend_action\" /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src/main/java/org/example/springboot/mapper/*.java)",
+      "Bash(head -30 grep -n \"GetMapping\\\\|PostMapping\\\\|RequestMapping\" /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src/main/java/org/example/springboot/controller/RegionSalesController.java)",
+      "Bash(head -20 grep -n \"GetMapping\\\\|PostMapping\\\\|RequestMapping\" /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src/main/java/org/example/springboot/controller/StockWarningController.java)",
+      "Bash(ls /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/*.md)",
+      "Bash(ls /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/*约*)",
+      "Bash(find /Users/ihavebb/workspace/code/agri-input-trade -name *.md -maxdepth 2)",
+      "Bash(do if:*)",
+      "Bash(then echo:*)",
+      "Bash(fi done:*)",
+      "Bash(/usr/local/mysql/bin/mysql --version)",
+      "Read(//usr/local/mysql/**)",
+      "Bash(find /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src -path */dto/statistics/*.java)",
+      "Bash(npm run:*)"
     ]
   }
 }

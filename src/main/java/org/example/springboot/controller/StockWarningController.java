@@ -26,7 +26,7 @@ import java.util.List;
 @Slf4j
 @Tag(name = "库存预警", description = "库存监控和预警管理")
 @RestController
-@RequestMapping("/api/stock-warning")
+@RequestMapping("/stock-warning")
 @RequiredArgsConstructor
 public class StockWarningController {
 

@@ -28,7 +28,7 @@ import java.util.List;
 @Slf4j
 @Tag(name = "地域销售分析", description = "地域销售热力图和分布统计")
 @RestController
-@RequestMapping("/api/region-sales")
+@RequestMapping("/region-sales")
 @RequiredArgsConstructor
 public class RegionSalesController {
 

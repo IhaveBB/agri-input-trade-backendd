@@ -8,8 +8,7 @@ import org.example.springboot.util.RedisUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -37,9 +36,6 @@ public class EmailService {
     /** 发送频率限制时间（秒） */
     private static final int RATE_LIMIT_SECONDS = 60;
 
-    @Resource
-    private JavaMailSender javaMailSender;
-
     @Value("${user.fromEmail}")
     private String FROM_EMAIL;
 
@@ -51,6 +47,10 @@ public class EmailService {
 
     @Resource
     private SecureRandom secureRandom;
+
+    @Resource
+    @Lazy
+    private EmailRecordService emailRecordService;
 
     /**
      * 发送注册验证码邮件
@@ -72,15 +72,13 @@ public class EmailService {
         // 生成验证码
         String code = generateCode();
 
-        // 发送邮件
-        SimpleMailMessage simpleMailMessage = new SimpleMailMessage();
-        simpleMailMessage.setFrom(FROM_EMAIL);
-        simpleMailMessage.setTo(email);
-        simpleMailMessage.setSubject("注册验证码");
-        simpleMailMessage.setText("邮箱验证码为：" + code + "，有效期为5分钟，请勿转发给他人");
+        // 构建邮件内容
+        String subject = "注册验证码";
+        String content = "邮箱验证码为：" + code + "，有效期为5分钟，请勿转发给他人";
 
         try {
-            javaMailSender.send(simpleMailMessage);
+            // 通过 EmailRecordService 发送邮件（会记录到数据库）
+            emailRecordService.sendVerificationEmail(email, code, subject, content, null);
             LOGGER.info("注册验证码邮件已发送至：{}", email);
 
             // 存储验证码到 Redis，5分钟过期
@@ -116,15 +114,13 @@ public class EmailService {
         // 生成验证码
         String code = generateCode();
 
-        // 发送邮件
-        SimpleMailMessage simpleMailMessage = new SimpleMailMessage();
-        simpleMailMessage.setFrom(FROM_EMAIL);
-        simpleMailMessage.setTo(email);
-        simpleMailMessage.setSubject("找回密码验证码");
-        simpleMailMessage.setText("您的找回密码验证码为：" + code + "，有效期为5分钟，请勿泄露给他人");
+        // 构建邮件内容
+        String subject = "找回密码验证码";
+        String content = "您的找回密码验证码为：" + code + "，有效期为5分钟，请勿泄露给他人";
 
         try {
-            javaMailSender.send(simpleMailMessage);
+            // 通过 EmailRecordService 发送邮件（会记录到数据库）
+            emailRecordService.sendVerificationEmail(email, code, subject, content, user.getId());
             LOGGER.info("找回密码验证码邮件已发送至：{}", email);
 
             // 存储验证码到 Redis，5分钟过期
