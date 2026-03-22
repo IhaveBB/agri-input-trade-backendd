@@ -199,13 +199,39 @@ public class ProductService {
     }
 
     /**
-     * 获取商品实体（不包装Result，用于权限验证）
+     * 获取商品实体（不包装Result，用于控制层权限验证）
+     *
+     * @param productId 商品ID
+     * @return 商品实体，不存在时返回 null
+     * @author IhaveBB
+     * @date 2026/03/21
      */
     public Product getProductByIdValue(Long productId) {
         return productMapper.selectById(productId);
     }
+    /**
+     * 分页查询商品列表
+     * <p>
+     * 支持按名称、分类、商户、状态、价格区间筛选，支持按销量/价格/默认（创建时间）排序。
+     * 无筛选条件时开启分页缓存，有筛选条件时实时查询。
+     * </p>
+     *
+     * @param name        商品名称（模糊匹配，可为 null）
+     * @param categoryId  分类ID（精确，可为 null）
+     * @param merchantId  商户ID（精确，可为 null）
+     * @param status      商品状态（可为 null）
+     * @param currentPage 当前页码（从 1 开始）
+     * @param size        每页条数
+     * @param sortField   排序字段：sales / price / 默认创建时间
+     * @param sortOrder   排序方向：asc / desc
+     * @param minPrice    价格下限（含折扣价，可为 null）
+     * @param maxPrice    价格上限（含折扣价，可为 null）
+     * @return 分页结果，含关联的商户和分类信息
+     * @author IhaveBB
+     * @date 2026/03/21
+     */
     @Cacheable(value = "productPages",
-            key = "{#currentPage, #size, #sortField, #sortOrder, T(org.example.springboot.util.CacheUtil).generateIdFingerprint(#result)}",
+            key = "{#currentPage, #size, #sortField, #sortOrder}",
             condition = "#name == null && #categoryId == null && #merchantId == null && #status == null && #minPrice == null && #maxPrice == null")
     public Page<Product> getProductsByPage(String name, Long categoryId, Long merchantId, Integer status,
                                            Integer currentPage, Integer size, String sortField, String sortOrder,
@@ -365,9 +391,9 @@ public class ProductService {
             @CacheEvict(value = "products", allEntries = true)
     })
     public void updateBatchStatus(List<Long> ids, Integer status) {
-        // 检查状态值是否有效
-        if (status != 0 && status != 1) {
-            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "无效的商品状态值");
+        // 检查状态值是否有效（0-待审核，1-下架，2-上架）
+        if (status != 0 && status != 1 && status != 2) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "无效的商品状态值，合法值：0-待审核，1-下架，2-上架");
         }
 
         // 检查商品是否存在

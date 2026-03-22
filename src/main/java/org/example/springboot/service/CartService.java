@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.example.springboot.entity.Cart;
 import org.example.springboot.entity.Product;
+import org.example.springboot.entity.dto.CartAddDTO;
 import org.example.springboot.enums.ErrorCodeEnum;
 import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.CartMapper;
@@ -31,27 +32,34 @@ public class CartService {
     @Autowired
     private ProductMapper productMapper;
 
-    public Cart addToCart(Cart cart) {
+    /**
+     * 添加商品到购物车（使用 DTO）
+     *
+     * @param userId 用户ID（从上下文获取）
+     * @param dto    购物车添加DTO
+     * @return 购物车记录
+     */
+    public Cart addToCart(Long userId, CartAddDTO dto) {
         // 检查商品是否存在
-        Product product = productMapper.selectById(cart.getProductId());
+        Product product = productMapper.selectById(dto.getProductId());
         if (product == null) {
             throw new BusinessException(ErrorCodeEnum.PRODUCT_NOT_FOUND, "商品不存在");
         }
 
         // 检查库存是否足够
-        if (product.getStock() < cart.getQuantity()) {
+        if (product.getStock() < dto.getQuantity()) {
             throw new BusinessException(ErrorCodeEnum.PRODUCT_STOCK_INSUFFICIENT, "库存不足");
         }
 
         // 检查是否已经存在相同商品
         LambdaQueryWrapper<Cart> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Cart::getUserId, cart.getUserId())
-                   .eq(Cart::getProductId, cart.getProductId());
+        queryWrapper.eq(Cart::getUserId, userId)
+                   .eq(Cart::getProductId, dto.getProductId());
         Cart existingCart = cartMapper.selectOne(queryWrapper);
 
         if (existingCart != null) {
             // 更新数量
-            existingCart.setQuantity(existingCart.getQuantity() + cart.getQuantity());
+            existingCart.setQuantity(existingCart.getQuantity() + dto.getQuantity());
             int result = cartMapper.updateById(existingCart);
             if (result > 0) {
                 LOGGER.info("更新购物车成功，购物车ID：{}", existingCart.getId());
@@ -59,6 +67,10 @@ public class CartService {
             }
         } else {
             // 新增记录
+            Cart cart = new Cart();
+            cart.setUserId(userId);
+            cart.setProductId(dto.getProductId());
+            cart.setQuantity(dto.getQuantity());
             int result = cartMapper.insert(cart);
             if (result > 0) {
                 LOGGER.info("添加购物车成功，购物车ID：{}", cart.getId());
@@ -97,7 +109,8 @@ public class CartService {
         if (result > 0) {
             LOGGER.info("删除购物车成功，购物车ID：{}", id);
         } else {
-            throw new BusinessException(ErrorCodeEnum.ERROR, "删除购物车失败");
+            // 购物车项不存在也视为成功（幂等性）
+            LOGGER.info("购物车项不存在，无需删除，购物车ID：{}", id);
         }
     }
 
@@ -105,6 +118,8 @@ public class CartService {
         LambdaQueryWrapper<Cart> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(Cart::getUserId, userId);
         List<Cart> carts = cartMapper.selectList(queryWrapper);
+        LOGGER.info("查询用户购物车，用户ID：{}，购物车项数量：{}", userId, carts != null ? carts.size() : 0);
+
         if (carts != null && !carts.isEmpty()) {
             // 填充关联信息
             carts.forEach(cart -> {
@@ -122,7 +137,7 @@ public class CartService {
         if (result > 0) {
             LOGGER.info("清空购物车成功，用户ID：{}", userId);
         } else {
-            throw new BusinessException(ErrorCodeEnum.ERROR, "清空购物车失败");
+            LOGGER.info("购物车为空，无需清空，用户ID：{}", userId);
         }
     }
 
@@ -132,8 +147,14 @@ public class CartService {
             queryWrapper.eq(Cart::getUserId, userId);
         }
         if (StringUtils.isNotEmpty(productName)) {
-            List<Product> products = productMapper.selectList(new LambdaQueryWrapper<Product>().like(Product::getName, productName));
-            List<Long> productIds = products.stream().map(Product::getId).collect(Collectors.toList());
+            List<Long> productIds = productMapper.selectList(new LambdaQueryWrapper<Product>().like(Product::getName, productName))
+                    .stream().map(Product::getId).collect(Collectors.toList());
+            if (productIds.isEmpty()) {
+                // 没有匹配商品时直接返回空分页，避免 IN() 空列表产生非法 SQL
+                Page<Cart> emptyPage = new Page<>(currentPage, size);
+                emptyPage.setTotal(0);
+                return emptyPage;
+            }
             queryWrapper.in(Cart::getProductId, productIds);
         }
 
@@ -150,11 +171,16 @@ public class CartService {
     }
 
     public void deleteBatch(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            LOGGER.info("批量删除购物车项，ID列表为空");
+            return;
+        }
         int result = cartMapper.deleteByIds(ids);
         if (result > 0) {
             LOGGER.info("批量删除购物车项成功，删除数量：{}", result);
         } else {
-            throw new BusinessException(ErrorCodeEnum.ERROR, "批量删除购物车项失败");
+            // 购物车项不存在也视为成功（幂等性）
+            LOGGER.info("购物车项不存在或已被删除，无需删除");
         }
     }
 

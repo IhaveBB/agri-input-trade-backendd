@@ -12,8 +12,8 @@ import java.util.List;
  * 实现类包括：融合推荐、新品推荐、热销推荐等
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 public interface RecommendationStrategy {
 

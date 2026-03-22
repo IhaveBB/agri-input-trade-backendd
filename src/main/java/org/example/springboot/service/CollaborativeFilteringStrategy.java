@@ -21,8 +21,8 @@ import java.util.stream.Collectors;
  * 用于论文实验中与融合推荐算法进行对比
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Slf4j
 @Component
@@ -48,6 +48,12 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
 
     @Resource
     private FavoriteMapper favoriteMapper;
+
+    @Resource
+    private RecommendActionMapper recommendActionMapper;
+
+    @Resource
+    private ReviewMapper reviewMapper;
 
     // ==================== 缓存结构 ====================
 
@@ -127,6 +133,8 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
      */
     private void refreshInteractionMatrix() {
         userInteractionMatrix.clear();
+        // 交互矩阵重建后相似度矩阵必须同步清空，确保下一步重新计算
+        itemSimilarityMatrix.clear();
 
         // 加载购买行为
         LambdaQueryWrapper<Order> orderWrapper = new LambdaQueryWrapper<>();
@@ -164,6 +172,33 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
             }
             addToInteraction(cart.getUserId(), cart.getProductId(),
                     recommendationConfig.getCartWeight());
+        }
+
+        // 加载浏览（点击）行为
+        LambdaQueryWrapper<RecommendAction> clickWrapper = new LambdaQueryWrapper<>();
+        clickWrapper.eq(RecommendAction::getActionType, "CLICK");
+        List<RecommendAction> clicks = recommendActionMapper.selectList(clickWrapper);
+
+        for (RecommendAction click : clicks) {
+            if (click.getUserId() == null || click.getProductId() == null) {
+                continue;
+            }
+            addToInteraction(click.getUserId(), click.getProductId(),
+                    recommendationConfig.getClickWeight());
+        }
+
+        // 加载评分行为（评分值作为交互强度）
+        LambdaQueryWrapper<Review> reviewWrapper = new LambdaQueryWrapper<>();
+        reviewWrapper.isNotNull(Review::getRating).eq(Review::getStatus, 1);
+        List<Review> reviews = reviewMapper.selectList(reviewWrapper);
+
+        for (Review review : reviews) {
+            if (review.getUserId() == null || review.getProductId() == null
+                    || review.getRating() == null || review.getRating() <= 0) {
+                continue;
+            }
+            addToInteraction(review.getUserId(), review.getProductId(),
+                    review.getRating() * recommendationConfig.getReviewWeight());
         }
     }
 
@@ -332,13 +367,39 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
     }
 
     /**
-     * 转换为DTO
+     * 将 (productId, score) 列表批量转换为推荐结果DTO
+     * <p>
+     * 使用 selectBatchIds 批量查询商品和分类，避免 N+1 查询问题。
+     * </p>
+     *
+     * @param items productId → 推荐分数的有序条目列表
+     * @return 推荐结果DTO列表
+     * @author IhaveBB
+     * @date 2026/03/21
      */
     private List<RecommendationResultDTO> convertToDTOs(List<Map.Entry<Long, Double>> items) {
-        List<RecommendationResultDTO> results = new ArrayList<>();
+        if (items.isEmpty()) {
+            return Collections.emptyList();
+        }
 
+        // 批量查询商品（1次查询）
+        List<Long> productIds = items.stream().map(Map.Entry::getKey).collect(Collectors.toList());
+        List<Product> productList = productMapper.selectBatchIds(productIds);
+        Map<Long, Product> productMap = productList.stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+
+        // 批量查询分类（1次查询）
+        Set<Long> categoryIds = productList.stream()
+                .filter(p -> p.getCategoryId() != null)
+                .map(Product::getCategoryId)
+                .collect(Collectors.toSet());
+        Map<Long, Category> categoryMap = categoryIds.isEmpty() ? Collections.emptyMap()
+                : categoryMapper.selectBatchIds(new ArrayList<>(categoryIds)).stream()
+                        .collect(Collectors.toMap(Category::getId, c -> c));
+
+        List<RecommendationResultDTO> results = new ArrayList<>();
         for (Map.Entry<Long, Double> entry : items) {
-            Product product = productMapper.selectById(entry.getKey());
+            Product product = productMap.get(entry.getKey());
             if (product == null) {
                 continue;
             }
@@ -350,11 +411,9 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
             dto.setImageUrl(product.getImageUrl());
             dto.setCategoryId(product.getCategoryId());
 
-            if (product.getCategoryId() != null) {
-                Category category = categoryMapper.selectById(product.getCategoryId());
-                if (category != null) {
-                    dto.setCategoryName(category.getName());
-                }
+            Category category = categoryMap.get(product.getCategoryId());
+            if (category != null) {
+                dto.setCategoryName(category.getName());
             }
 
             dto.setScore(entry.getValue());

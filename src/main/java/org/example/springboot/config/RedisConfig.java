@@ -7,23 +7,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.cache.RedisCacheConfiguration;
-import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
-import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
-
-import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Redis 配置类
+ * 注：项目使用 Caffeine 作为 Spring Cache 的缓存管理器（见 CacheConfig.java）
+ * Redis 用于分布式缓存和手动缓存操作（通过 RedisTemplate）
  *
  * @author IhaveBB
  * @date 2026/03/20
@@ -65,30 +59,5 @@ public class RedisConfig {
 
         template.afterPropertiesSet();
         return template;
-    }
-
-    /**
-     * 配置 Redis 缓存管理器（可选，用于 @Cacheable 注解）
-     */
-    @Bean
-    public CacheManager redisCacheManager(RedisConnectionFactory connectionFactory) {
-        // 默认缓存配置
-        RedisCacheConfiguration defaultConfig = RedisCacheConfiguration.defaultCacheConfig()
-                .entryTtl(Duration.ofMinutes(30))
-                .serializeKeysWith(RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
-                .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(new GenericJackson2JsonRedisSerializer()))
-                .disableCachingNullValues();
-
-        // 不同缓存空间的不同 TTL 配置
-        Map<String, RedisCacheConfiguration> cacheConfigurations = new HashMap<>();
-        cacheConfigurations.put("user", defaultConfig.entryTtl(Duration.ofMinutes(10)));
-        cacheConfigurations.put("product", defaultConfig.entryTtl(Duration.ofMinutes(30)));
-        cacheConfigurations.put("category", defaultConfig.entryTtl(Duration.ofHours(1)));
-
-        return RedisCacheManager.builder(connectionFactory)
-                .cacheDefaults(defaultConfig)
-                .withInitialCacheConfigurations(cacheConfigurations)
-                .transactionAware()
-                .build();
     }
 }

@@ -19,8 +19,8 @@ import java.util.List;
  * 提供基于物品协同过滤与画像约束的融合推荐算法接口
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Slf4j
 @Tag(name = "融合推荐算法接口", description = "基于 Item-CF 与画像约束的融合推荐算法")

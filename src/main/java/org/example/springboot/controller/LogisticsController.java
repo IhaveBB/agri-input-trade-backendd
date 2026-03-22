@@ -50,6 +50,24 @@ public class LogisticsController {
     }
 
     /**
+     * 更新物流信息
+     * 权限：商户或管理员
+     *
+     * @param id        物流ID
+     * @param logistics 物流更新实体
+     * @return 操作结果
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    @Operation(summary = "更新物流信息")
+    @RequiresRole({"MERCHANT", "ADMIN"})
+    @PutMapping("/{id}")
+    public Result<?> updateLogistics(@PathVariable Long id, @RequestBody Logistics logistics) {
+        logistics.setId(id);
+        return Result.success(logisticsService.updateLogistics(logistics));
+    }
+
+    /**
      * 更新物流状态
      * 权限：商户或管理员
      *

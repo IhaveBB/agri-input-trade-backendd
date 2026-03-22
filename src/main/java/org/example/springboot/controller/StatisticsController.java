@@ -5,6 +5,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.dto.statistics.*;
 import org.example.springboot.enumClass.UserRole;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.service.RecommendActionService;
 import org.example.springboot.service.StatisticsService;
 import org.example.springboot.util.UserContext;
@@ -16,6 +18,13 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 统计分析控制器
+ * 提供销售统计、用户统计、推荐系统效果评估等数据查询接口
+ *
+ * @author IhaveBB
+ * @date 2026/03/22
+ */
 @Tag(name = "统计分析接口")
 @RestController
 @RequestMapping("/statistics")
@@ -30,6 +39,14 @@ public class StatisticsController {
 
     // ==================== 销售统计接口 ====================
 
+    /**
+     * 获取本月订单统计
+     *
+     * @param merchantId 商户ID（可为null，管理员场景）
+     * @return 本月订单统计数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取本月订单统计")
     @GetMapping("/orders/monthly")
     public Result<OrderStatisticsDTO> getMonthlyOrderStatistics(@RequestParam(required = false) Long merchantId) {
@@ -39,6 +56,14 @@ public class StatisticsController {
         return Result.success(statistics);
     }
 
+    /**
+     * 获取本月销售额统计
+     *
+     * @param merchantId 商户ID（可为null，管理员场景）
+     * @return 本月销售额统计数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取本月销售额统计")
     @GetMapping("/sales/monthly")
     public Result<SalesStatisticsDTO> getMonthlySalesStatistics(@RequestParam(required = false) Long merchantId) {
@@ -48,6 +73,17 @@ public class StatisticsController {
         return Result.success(statistics);
     }
 
+    /**
+     * 获取用户订单统计
+     * <p>
+     * 普通用户只能查看自己的订单统计，管理员可以查看任意用户。
+     * </p>
+     *
+     * @param userId 用户ID（可为null，取登录用户ID）
+     * @return 用户订单统计数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取用户订单统计")
     @GetMapping("/user/orders")
     public Result<UserOrderStatisticsDTO> getUserOrderStatistics(@RequestParam(required = false) Long userId) {
@@ -55,7 +91,7 @@ public class StatisticsController {
             userId = UserContext.requireUserId();
         } else {
             if (UserContext.isUser() && !userId.equals(UserContext.getUserId())) {
-                throw new UserContext.PermissionDeniedException("无权限查看他人的订单统计");
+                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限查看他人的订单统计");
             }
         }
 
@@ -64,6 +100,13 @@ public class StatisticsController {
         return Result.success(statistics);
     }
 
+    /**
+     * 获取当前登录用户的消费统计
+     *
+     * @return 用户消费统计数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取用户消费统计")
     @GetMapping("/user/spending")
     public Result<UserSpendingStatisticsDTO> getUserSpendingStatistics() {
@@ -73,6 +116,13 @@ public class StatisticsController {
         return Result.success(statistics);
     }
 
+    /**
+     * 获取年度用户总数统计
+     *
+     * @return 年度用户统计数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取用户总数统计")
     @GetMapping("/users/yearly")
     public Result<YearlyUserStatisticsDTO> getYearlyUserStatistics() {
@@ -81,6 +131,14 @@ public class StatisticsController {
         return Result.success(statistics);
     }
 
+    /**
+     * 获取热销商品 Top5
+     *
+     * @param merchantId 商户ID（可为null，管理员场景）
+     * @return 热销商品 Top5 统计数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取热销商品 Top5")
     @GetMapping("/products/top5")
     public Result<TopProductsStatisticsDTO> getTopSellingProducts(@RequestParam(required = false) Long merchantId) {
@@ -90,6 +148,14 @@ public class StatisticsController {
         return Result.success(statistics);
     }
 
+    /**
+     * 获取品类销售占比统计
+     *
+     * @param merchantId 商户ID（可为null，管理员场景）
+     * @return 品类销售占比数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取品类销售占比")
     @GetMapping("/category/sales")
     public Result<CategorySalesStatisticsResponse> getCategorySalesStatistics(@RequestParam(required = false) Long merchantId) {
@@ -101,6 +167,15 @@ public class StatisticsController {
 
     // ==================== 新增统计接口 ====================
 
+    /**
+     * 获取销售趋势数据
+     *
+     * @param days       统计天数，默认30天
+     * @param merchantId 商户ID（可为null，管理员场景）
+     * @return 销售趋势数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取销售趋势")
     @GetMapping("/sales/trend")
     public Result<SalesTrendResponse> getSalesTrend(
@@ -112,6 +187,14 @@ public class StatisticsController {
         return Result.success(response);
     }
 
+    /**
+     * 获取季节性销售统计
+     *
+     * @param merchantId 商户ID（可为null，管理员场景）
+     * @return 季节性销售统计数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取季节性销售统计")
     @GetMapping("/sales/seasonal")
     public Result<SeasonalSalesResponse> getSeasonalStatistics(@RequestParam(required = false) Long merchantId) {
@@ -121,6 +204,14 @@ public class StatisticsController {
         return Result.success(response);
     }
 
+    /**
+     * 获取地区销售统计
+     *
+     * @param merchantId 商户ID（可为null，管理员场景）
+     * @return 地区销售统计数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取地区销售统计")
     @GetMapping("/sales/region")
     public Result<RegionSalesResponse> getRegionStatistics(@RequestParam(required = false) Long merchantId) {
@@ -130,6 +221,13 @@ public class StatisticsController {
         return Result.success(response);
     }
 
+    /**
+     * 获取商户列表（仅管理员）
+     *
+     * @return 商户列表
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取商户列表")
     @GetMapping("/merchants")
     public Result<List<MerchantDTO>> getMerchantList() {
@@ -141,6 +239,13 @@ public class StatisticsController {
 
     // ==================== 推荐系统效果评估接口 ====================
 
+    /**
+     * 获取推荐系统效果概览
+     *
+     * @return 推荐系统效果概览数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取推荐系统效果概览")
     @GetMapping("/recommend/overview")
     public Result<RecommendOverviewResponse> getRecommendOverview() {
@@ -149,6 +254,14 @@ public class StatisticsController {
         return Result.success(response);
     }
 
+    /**
+     * 获取推荐效果趋势
+     *
+     * @param days 统计天数，默认30天
+     * @return 推荐效果趋势数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取推荐效果趋势")
     @GetMapping("/recommend/trend")
     public Result<RecommendTrendResponse> getRecommendTrend(@RequestParam(defaultValue = "30") Integer days) {
@@ -157,6 +270,13 @@ public class StatisticsController {
         return Result.success(response);
     }
 
+    /**
+     * 获取分类推荐效果
+     *
+     * @return 分类推荐效果数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取分类推荐效果")
     @GetMapping("/recommend/category-effect")
     public Result<RecommendCategoryEffectResponse> getCategoryEffect() {
@@ -165,6 +285,13 @@ public class StatisticsController {
         return Result.success(response);
     }
 
+    /**
+     * 获取推荐算法构成分析
+     *
+     * @return 推荐算法构成数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取推荐算法构成")
     @GetMapping("/recommend/algorithm-composition")
     public Result<RecommendAlgorithmResponse> getAlgorithmComposition() {
@@ -173,6 +300,13 @@ public class StatisticsController {
         return Result.success(response);
     }
 
+    /**
+     * 获取推荐多样性指标（信息熵）
+     *
+     * @return 推荐多样性指标数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取推荐多样性指标（信息熵）")
     @GetMapping("/recommend/diversity")
     public Result<RecommendDiversityDTO> getRecommendationDiversity() {
@@ -181,6 +315,13 @@ public class StatisticsController {
         return Result.success(response);
     }
 
+    /**
+     * 获取用户行为相似度分布
+     *
+     * @return 用户行为相似度分布数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取用户行为相似度分布")
     @GetMapping("/recommend/user-similarity")
     public Result<RecommendUserSimilarityDTO> getUserSimilarityDistribution() {
@@ -189,6 +330,13 @@ public class StatisticsController {
         return Result.success(response);
     }
 
+    /**
+     * 获取智能优化建议
+     *
+     * @return 推荐系统智能优化建议
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "获取智能优化建议")
     @GetMapping("/recommend/suggestions")
     public Result<RecommendOptimizationDTO> getOptimizationSuggestions() {
@@ -197,6 +345,13 @@ public class StatisticsController {
         return Result.success(response);
     }
 
+    /**
+     * 预测下期推荐效果
+     *
+     * @return 下期推荐效果预测数据
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     @Operation(summary = "预测下期推荐效果")
     @GetMapping("/recommend/prediction")
     public Result<RecommendPredictionDTO> predictNextPeriodEffect() {

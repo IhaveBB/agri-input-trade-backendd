@@ -2,11 +2,14 @@ package org.example.springboot.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.example.springboot.annotation.RequiresRole;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.Logistics;
 import org.example.springboot.entity.Order;
 import org.example.springboot.entity.OrderBatchRequest;
+import org.example.springboot.entity.dto.OrderAddressUpdateDTO;
+import org.example.springboot.entity.dto.OrderCreateDTO;
 import org.example.springboot.enumClass.UserRole;
 import org.example.springboot.enums.ErrorCodeEnum;
 import org.example.springboot.exception.BusinessException;
@@ -37,18 +40,19 @@ public class OrderController {
 
     /**
      * 创建订单
-     * 权限：需要登录
+     * 权限：需要登录，userId 从上下文获取
      *
-     * @param order 订单实体
+     * @param dto 订单创建DTO
      * @return 创建的订单
      * @author IhaveBB
-     * @date 2026/03/19
+     * @date 2026/03/21
      */
     @Operation(summary = "创建订单")
     @RequiresRole
     @PostMapping
-    public Result<Order> createOrder(@RequestBody Order order) {
-        return Result.success(orderService.createOrder(order));
+    public Result<Order> createOrder(@Valid @RequestBody OrderCreateDTO dto) {
+        Long currentUserId = UserContext.getUserId();
+        return Result.success(orderService.createOrder(currentUserId, dto));
     }
 
     /**
@@ -176,6 +180,22 @@ public class OrderController {
     }
 
     /**
+     * 获取当前用户订单列表
+     * 权限：需要登录
+     *
+     * @return 订单列表
+     * @author IhaveBB
+     * @date 2026/03/21
+     */
+    @Operation(summary = "获取当前用户订单列表")
+    @RequiresRole
+    @GetMapping("/my")
+    public Result<List<Order>> getMyOrders() {
+        Long currentUserId = UserContext.getUserId();
+        return Result.success(orderService.getOrdersByUserId(currentUserId));
+    }
+
+    /**
      * 根据用户ID获取订单列表
      * 权限：需要登录，普通用户只能查看自己的订单
      *
@@ -287,23 +307,16 @@ public class OrderController {
      * 更新订单收货信息
      * 权限：需要登录，只能修改自己订单的收货信息
      *
-     * @param id      订单ID
-     * @param name    收货人姓名
-     * @param address 收货地址
-     * @param phone   联系电话
+     * @param id  订单ID
+     * @param dto 收货地址更新DTO
      * @return 更新后的订单
      * @author IhaveBB
-     * @date 2026/03/19
+     * @date 2026/03/21
      */
     @Operation(summary = "更新订单收货信息")
     @RequiresRole
     @PutMapping("/{id}/address")
-    public Result<Order> updateOrderAddress(
-            @PathVariable Long id,
-            @RequestParam String name,
-            @RequestParam String address,
-            @RequestParam String phone) {
-
+    public Result<Order> updateOrderAddress(@PathVariable Long id, @Valid @RequestBody OrderAddressUpdateDTO dto) {
         Long userId = UserContext.getUserId();
         String role = UserContext.getRole();
 
@@ -314,41 +327,7 @@ public class OrderController {
             throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改他人订单的收货信息");
         }
 
-        return Result.success(orderService.updateOrderAddress(name, id, address, phone));
-    }
-
-    /**
-     * 更新订单信息
-     * 权限：需要登录，复杂权限验证
-     *
-     * @param id    订单ID
-     * @param order 订单实体
-     * @return 更新后的订单
-     * @author IhaveBB
-     * @date 2026/03/19
-     */
-    @Operation(summary = "更新订单信息")
-    @RequiresRole
-    @PutMapping("/{id}")
-    public Result<Order> updateOrder(@PathVariable Long id, @RequestBody Order order) {
-        Long userId = UserContext.getUserId();
-        String role = UserContext.getRole();
-
-        Order existingOrder = orderService.getOrderById(id);
-
-        // 权限检查
-        if (UserRole.isUser(role)) {
-            if (!existingOrder.getUserId().equals(userId)) {
-                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改他人订单");
-            }
-        } else if (UserRole.isMerchant(role)) {
-            if (!orderService.isOrderBelongToMerchant(id, userId)) {
-                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改非自己店铺的订单");
-            }
-        }
-        // 管理员可以修改任何订单
-
-        return Result.success(orderService.updateOrder(id, order));
+        return Result.success(orderService.updateOrderAddress(id, dto));
     }
 
     /**
@@ -451,7 +430,7 @@ public class OrderController {
 
     /**
      * 批量创建订单（从购物车下单）
-     * 权限：需要登录，用户ID必须匹配
+     * 权限：需要登录，userId 从上下文获取
      *
      * @param request 批量创建订单请求
      * @return 操作结果
@@ -464,10 +443,8 @@ public class OrderController {
     public Result<Void> batchCreateOrders(@RequestBody OrderBatchRequest request) {
         Long currentUserId = UserContext.getUserId();
 
-        // 验证用户 ID 是否匹配
-        if (!currentUserId.equals(request.getUserId())) {
-            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "用户 ID 不匹配");
-        }
+        // 强制使用当前用户ID，防止伪造
+        request.setUserId(currentUserId);
 
         orderService.batchCreateOrders(request);
         return Result.success();

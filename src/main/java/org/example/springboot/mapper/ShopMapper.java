@@ -44,7 +44,7 @@ public interface ShopMapper {
             "</if>" +
             "</script>")
     List<ShopReviewDTO> getShopReviews(@Param("merchantId") Long merchantId,
-                                       @Param("offset") Integer offset,
+                                       @Param("offset") Long offset,
                                        @Param("limit") Integer limit);
 
     /**

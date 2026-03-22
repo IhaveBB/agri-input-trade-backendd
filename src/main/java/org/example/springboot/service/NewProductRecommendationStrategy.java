@@ -31,8 +31,8 @@ import java.util.stream.Collectors;
  * 推荐逻辑：基于用户画像与商品画像的匹配度排序
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Slf4j
 @Component

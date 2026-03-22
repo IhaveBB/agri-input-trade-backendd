@@ -38,6 +38,11 @@ public class ShopService {
 
     /**
      * 获取店铺信息
+     *
+     * @param merchantId 商户ID
+     * @return 店铺详情DTO（含评分、商品数、总销量等统计数据）
+     * @author IhaveBB
+     * @date 2026/03/22
      */
     public ShopDTO getShopInfo(Long merchantId) {
         User merchant = userMapper.selectById(merchantId);
@@ -71,7 +76,14 @@ public class ShopService {
     }
 
     /**
-     * 获取店铺商品列表
+     * 获取店铺商品列表（分页）
+     *
+     * @param merchantId 商户ID
+     * @param pageNum    页码
+     * @param pageSize   每页条数
+     * @return 包含商品列表和总数的Map
+     * @author IhaveBB
+     * @date 2026/03/22
      */
     public Map<String, Object> getShopProducts(Long merchantId, Integer pageNum, Integer pageSize) {
         Map<String, Object> result = new HashMap<>();
@@ -103,12 +115,19 @@ public class ShopService {
     }
 
     /**
-     * 获取店铺评价列表
+     * 获取店铺评价列表（分页）
+     *
+     * @param merchantId 商户ID
+     * @param pageNum    页码
+     * @param pageSize   每页条数
+     * @return 包含评价列表和总数的Map
+     * @author IhaveBB
+     * @date 2026/03/22
      */
     public Map<String, Object> getShopReviews(Long merchantId, Integer pageNum, Integer pageSize) {
         Map<String, Object> result = new HashMap<>();
 
-        int offset = (pageNum - 1) * pageSize;
+        long offset = (long) (pageNum - 1) * pageSize;
         List<ShopReviewDTO> reviews = shopMapper.getShopReviews(merchantId, offset, pageSize);
 
         // 查询总数
@@ -124,7 +143,12 @@ public class ShopService {
     }
 
     /**
-     * 获取店铺统计信息
+     * 获取店铺统计信息（好评率、各星级评价数等）
+     *
+     * @param merchantId 商户ID
+     * @return 包含统计信息的Map
+     * @author IhaveBB
+     * @date 2026/03/22
      */
     public Map<String, Object> getShopStatistics(Long merchantId) {
         Map<String, Object> result = new HashMap<>();

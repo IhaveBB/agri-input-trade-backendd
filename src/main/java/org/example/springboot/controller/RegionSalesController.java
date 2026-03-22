@@ -22,8 +22,8 @@ import java.util.List;
  * 提供地域销售数据查询接口，支持热力图和分布分析
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Slf4j
 @Tag(name = "地域销售分析", description = "地域销售热力图和分布统计")

@@ -25,8 +25,8 @@ import java.util.stream.Collectors;
  * 3. 作为对比算法基线
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Slf4j
 @Component

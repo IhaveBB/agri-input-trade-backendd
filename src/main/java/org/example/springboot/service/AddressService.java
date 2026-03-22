@@ -28,6 +28,8 @@ public class AddressService {
      * @param userId 用户ID（从登录上下文获取）
      * @param dto    地址创建DTO
      * @return 创建后的地址
+     * @author IhaveBB
+     * @date 2026/03/22
      */
     public Address createAddress(Long userId, AddressCreateDTO dto) {
         Address address = new Address();
@@ -50,6 +52,8 @@ public class AddressService {
      * @param id  地址ID
      * @param dto 地址更新DTO
      * @return 更新后的地址
+     * @author IhaveBB
+     * @date 2026/03/22
      */
     public Address updateAddress(Long id, AddressUpdateDTO dto) {
         Address address = new Address();
@@ -66,6 +70,13 @@ public class AddressService {
         throw new BusinessException(ErrorCodeEnum.ERROR, "更新地址失败");
     }
 
+    /**
+     * 根据ID删除地址
+     *
+     * @param id 地址ID
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     public void deleteAddress(Long id) {
         int result = addressMapper.deleteById(id);
         if (result > 0) {
@@ -75,6 +86,14 @@ public class AddressService {
         }
     }
 
+    /**
+     * 根据ID获取地址
+     *
+     * @param id 地址ID
+     * @return 地址实体
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     public Address getAddressById(Long id) {
         Address address = addressMapper.selectById(id);
         if (address != null) {
@@ -83,6 +102,14 @@ public class AddressService {
         throw new BusinessException(ErrorCodeEnum.NOT_FOUND, "未找到地址");
     }
 
+    /**
+     * 根据用户ID获取地址列表
+     *
+     * @param userId 用户ID
+     * @return 用户地址列表，无数据时返回空列表
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     public List<Address> getAddressesByUserId(Long userId) {
         LambdaQueryWrapper<Address> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(Address::getUserId, userId);
@@ -90,6 +117,16 @@ public class AddressService {
         return addresses != null ? addresses : new java.util.ArrayList<>();
     }
 
+    /**
+     * 分页查询地址列表
+     *
+     * @param userId      用户ID（可为null，管理员场景）
+     * @param currentPage 当前页码
+     * @param size        每页条数
+     * @return 分页地址列表
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     public Page<Address> getAddressesByPage(Long userId, Integer currentPage, Integer size) {
         LambdaQueryWrapper<Address> queryWrapper = new LambdaQueryWrapper<>();
         if (userId != null) {
@@ -100,6 +137,13 @@ public class AddressService {
         return addressMapper.selectPage(page, queryWrapper);
     }
 
+    /**
+     * 批量删除地址
+     *
+     * @param ids 地址ID列表
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     public void deleteBatch(List<Long> ids) {
         int result = addressMapper.deleteBatchIds(ids);
         if (result > 0) {

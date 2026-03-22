@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.example.springboot.entity.Favorite;
 import org.example.springboot.entity.User;
 import org.example.springboot.entity.Product;
+import org.example.springboot.entity.dto.FavoriteCreateDTO;
 import org.example.springboot.enums.ErrorCodeEnum;
 import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.FavoriteMapper;
@@ -30,29 +31,44 @@ public class FavoriteService {
     @Autowired
     private ProductMapper productMapper;
 
-    public Favorite createFavorite(Favorite favorite) {
+    /**
+     * 创建收藏（使用 DTO）
+     *
+     * @param userId 用户ID（从上下文获取）
+     * @param dto    收藏创建DTO
+     * @return 收藏记录
+     */
+    public Favorite createFavorite(Long userId, FavoriteCreateDTO dto) {
         // 检查用户是否存在
-        User user = userMapper.selectById(favorite.getUserId());
+        User user = userMapper.selectById(userId);
         if (user == null) {
             throw new BusinessException(ErrorCodeEnum.USER_NOT_FOUND, "用户不存在");
         }
 
         // 检查商品是否存在
-        Product product = productMapper.selectById(favorite.getProductId());
+        Product product = productMapper.selectById(dto.getProductId());
         if (product == null) {
             throw new BusinessException(ErrorCodeEnum.PRODUCT_NOT_FOUND, "商品不存在");
         }
 
-        // 检查是否已经收藏,已收藏直接更新状态
+        // 检查是否已经收藏，已收藏则切换状态
         LambdaQueryWrapper<Favorite> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Favorite::getUserId, favorite.getUserId())
-                   .eq(Favorite::getProductId, favorite.getProductId());
-        if (favoriteMapper.selectCount(queryWrapper) > 0) {
-            favorite.setStatus(favorite.getStatus() == 0 ? 1 : 0);
-            return updateFavoriteStatus(favorite.getUserId(), favorite.getProductId(), favorite.getStatus());
+        queryWrapper.eq(Favorite::getUserId, userId)
+                   .eq(Favorite::getProductId, dto.getProductId());
+        Favorite existingFavorite = favoriteMapper.selectOne(queryWrapper);
+
+        if (existingFavorite != null) {
+            // 切换收藏状态
+            int newStatus = existingFavorite.getStatus() == 1 ? 0 : 1;
+            return updateFavoriteStatus(userId, dto.getProductId(), newStatus);
         }
 
+        // 新增收藏
+        Favorite favorite = new Favorite();
+        favorite.setUserId(userId);
+        favorite.setProductId(dto.getProductId());
         favorite.setStatus(1);
+
         int result = favoriteMapper.insert(favorite);
         if (result > 0) {
             LOGGER.info("创建收藏成功，收藏ID：{}", favorite.getId());

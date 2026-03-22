@@ -20,8 +20,8 @@ import java.util.List;
  * 提供库存预警查询接口
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Slf4j
 @Tag(name = "库存预警", description = "库存监控和预警管理")

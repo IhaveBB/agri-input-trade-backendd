@@ -2,9 +2,11 @@ package org.example.springboot.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.example.springboot.annotation.RequiresRole;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.Cart;
+import org.example.springboot.entity.dto.CartAddDTO;
 import org.example.springboot.enumClass.UserRole;
 import org.example.springboot.enums.ErrorCodeEnum;
 import org.example.springboot.exception.BusinessException;
@@ -35,21 +37,19 @@ public class CartController {
 
     /**
      * 添加商品到购物车
-     * 权限：需要登录，强制使用当前用户ID
+     * 权限：需要登录，userId 从上下文获取
      *
-     * @param cart 购物车实体（包含商品ID和数量）
+     * @param dto 购物车添加DTO
      * @return 添加后的购物车记录
      * @author IhaveBB
-     * @date 2026/03/19
+     * @date 2026/03/21
      */
     @Operation(summary = "添加商品到购物车")
     @RequiresRole
     @PostMapping
-    public Result<?> addToCart(@RequestBody Cart cart) {
+    public Result<?> addToCart(@Valid @RequestBody CartAddDTO dto) {
         Long currentUserId = UserContext.getUserId();
-        // 强制使用当前登录用户ID，防止伪造
-        cart.setUserId(currentUserId);
-        return Result.success(cartService.addToCart(cart));
+        return Result.success(cartService.addToCart(currentUserId, dto));
     }
 
     /**
@@ -100,15 +100,29 @@ public class CartController {
 
         // 验证购物车项是否属于当前用户（管理员可以操作任意购物车）
         Cart cart = cartService.getCartById(id);
-        if (cart == null) {
-            throw new BusinessException(ErrorCodeEnum.NOT_FOUND, "购物车记录不存在");
+        if (cart != null) {
+            if (!UserRole.isAdmin(role) && !cart.getUserId().equals(currentUserId)) {
+                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限删除他人购物车");
+            }
         }
-        if (!UserRole.isAdmin(role) && !cart.getUserId().equals(currentUserId)) {
-            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限删除他人购物车");
-        }
-
         cartService.deleteCartItem(id);
         return Result.success();
+    }
+
+    /**
+     * 获取当前用户购物车
+     * 权限：需要登录
+     *
+     * @return 购物车列表
+     * @author IhaveBB
+     * @date 2026/03/21
+     */
+    @Operation(summary = "获取当前用户购物车")
+    @RequiresRole
+    @GetMapping("/my")
+    public Result<?> getMyCart() {
+        Long currentUserId = UserContext.getUserId();
+        return Result.success(cartService.getCartByUserId(currentUserId));
     }
 
     /**
@@ -133,6 +147,23 @@ public class CartController {
         }
 
         return Result.success(cartService.getCartByUserId(userId));
+    }
+
+    /**
+     * 清空当前用户购物车
+     * 权限：需要登录
+     *
+     * @return 操作结果
+     * @author IhaveBB
+     * @date 2026/03/21
+     */
+    @Operation(summary = "清空当前用户购物车")
+    @RequiresRole
+    @DeleteMapping("/clear")
+    public Result<?> clearMyCart() {
+        Long currentUserId = UserContext.getUserId();
+        cartService.clearCart(currentUserId);
+        return Result.success();
     }
 
     /**
@@ -209,6 +240,7 @@ public class CartController {
         String role = UserContext.getRole();
 
         // 验证所有购物车项是否属于当前用户（管理员可以删除任意购物车项）
+        // 过滤掉不存在的购物车项，只校验存在的
         if (!UserRole.isAdmin(role)) {
             for (Long id : ids) {
                 Cart cart = cartService.getCartById(id);

@@ -27,8 +27,8 @@ import java.util.stream.Collectors;
  * - 多样性(Diversity)
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Slf4j
 @Service

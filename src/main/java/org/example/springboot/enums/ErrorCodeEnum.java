@@ -124,6 +124,16 @@ public enum ErrorCodeEnum {
     REVIEW_NOT_FOUND("V001", "评价不存在"),
 
     /**
+     * 未购买商品，不允许评价
+     */
+    PURCHASE_REQUIRED("V002", "请先购买该商品后再进行评价"),
+
+    /**
+     * 重复评价
+     */
+    REVIEW_ALREADY_EXISTS("V003", "您已经评价过该商品"),
+
+    /**
      * 收藏不存在
      */
     FAVORITE_NOT_FOUND("FAV001", "收藏不存在"),
@@ -169,9 +179,9 @@ public enum ErrorCodeEnum {
     SEASON_NOT_FOUND("SN001", "农事季节不存在"),
 
     /**
-     * 系统错误
+     * 系统错误（业务级，与 INTERNAL_ERROR 区分使用）
      */
-    SYSTEM_ERROR("500", "系统错误"),
+    SYSTEM_ERROR("SYS_ERR", "系统错误"),
 
     /**
      * 操作失败
@@ -189,9 +199,9 @@ public enum ErrorCodeEnum {
     LOGISTICS_STATUS_ERROR("L002", "物流状态错误"),
 
     /**
-     * 权限不足
+     * 权限不足（细粒度鉴权，与 FORBIDDEN 区分使用）
      */
-    PERMISSION_DENIED("403", "权限不足");
+    PERMISSION_DENIED("PERM_DENIED", "权限不足");
 
     private final String code;
     private final String message;

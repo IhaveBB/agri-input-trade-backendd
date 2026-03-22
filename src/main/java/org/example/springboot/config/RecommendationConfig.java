@@ -10,8 +10,8 @@ import org.springframework.stereotype.Component;
  * 集中管理推荐算法的可配置参数，支持通过 application.yml 动态调整
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Data
 @Component
@@ -53,7 +53,8 @@ public class RecommendationConfig {
     // ==================== 行为权重参数 ====================
 
     /**
-     * 点击行为权重
+     * 浏览（点击）行为权重
+     * 用户点击查看商品详情，信号强度最弱
      */
     private Integer clickWeight = 1;
 
@@ -71,6 +72,12 @@ public class RecommendationConfig {
      * 购买行为权重
      */
     private Integer purchaseWeight = 5;
+
+    /**
+     * 评分行为权重基数
+     * 实际权重 = rating(1-5) × reviewWeight，高分评价贡献更强正向信号
+     */
+    private Integer reviewWeight = 1;
 
     // ==================== 缓存参数 ====================
 

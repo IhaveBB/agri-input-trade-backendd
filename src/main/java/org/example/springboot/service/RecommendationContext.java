@@ -4,6 +4,8 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.example.springboot.entity.dto.RecommendationResultDTO;
 import org.example.springboot.entity.dto.UserProfileDTO;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -18,8 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * 使用策略模式实现不同推荐算法的灵活扩展
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Slf4j
 @Component
@@ -95,7 +97,7 @@ public class RecommendationContext {
         RecommendationStrategy strategy = strategyRegistry.get(strategyName);
         if (strategy == null) {
             log.error("[推荐策略] 未找到策略: {}", strategyName);
-            throw new IllegalArgumentException("未知的推荐策略: " + strategyName);
+            throw new BusinessException(ErrorCodeEnum.NOT_FOUND, "未知的推荐策略: " + strategyName);
         }
 
         return strategy.recommend(userId, userProfile, limit);

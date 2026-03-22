@@ -12,13 +12,15 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.example.springboot.config.AliPayConfig;
 import org.example.springboot.entity.Order;
 import org.example.springboot.entity.Product;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.OrderMapper;
 import org.example.springboot.mapper.ProductMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -46,20 +48,29 @@ public class AlipayService {
 
 
 
+    /**
+     * 发起支付宝支付，生成支付表单并写入响应
+     *
+     * @param orderId      订单ID
+     * @param httpResponse HTTP响应对象
+     * @throws Exception 支付宝API调用异常
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
     public void pay(Long orderId, HttpServletResponse httpResponse) throws Exception {
         // 查询订单信息
         Order order = orderMapper.selectById(orderId);
         if (order == null) {
-            throw new RuntimeException("订单不存在");
+            throw new BusinessException(ErrorCodeEnum.ORDER_NOT_FOUND);
         }
 
         Product product = productMapper.selectById(order.getProductId());
         if (product == null) {
-            throw new RuntimeException("商品不存在");
+            throw new BusinessException(ErrorCodeEnum.PRODUCT_NOT_FOUND);
         }
 
         if (product.getStock() < order.getQuantity()) {
-            throw new RuntimeException("库存不足");
+            throw new BusinessException(ErrorCodeEnum.PRODUCT_STOCK_INSUFFICIENT);
         }
 
 
@@ -102,11 +113,23 @@ public class AlipayService {
         httpResponse.getWriter().close();
     }
 
+    /**
+     * 处理支付宝异步回调通知，验签后更新库存和订单状态
+     * <p>
+     * 使用幂等守卫：订单不存在或状态非0（待支付）时直接跳过，防止重复扣减库存。
+     * </p>
+     *
+     * @param request HTTP请求对象（含支付宝回调参数）
+     * @throws Exception 验签或数据库异常
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    @Transactional(rollbackFor = Exception.class)
     public void handlePaymentNotify(HttpServletRequest request) throws Exception{
 
-        if (request.getParameter("trade_status").equals("TRADE_SUCCESS")) {
-            System.out.println("=========支付宝异步回调========");
-            System.out.println("=========支付宝异步回调========");
+        // 使用常量在左侧防止 trade_status 参数缺失时 NPE
+        if ("TRADE_SUCCESS".equals(request.getParameter("trade_status"))) {
+            LOGGER.info("=========支付宝异步回调========");
             Map<String, String> params = new HashMap<>();
             Map<String, String[]> requestParams = request.getParameterMap();
             for (String name : requestParams.keySet()) {
@@ -121,6 +144,12 @@ public class AlipayService {
 
                 Long orderId = Long.parseLong(tradeNo);
                 Order order = orderMapper.selectById(orderId);
+
+                // 订单不存在或已处于支付后状态时跳过，防止重复回调重复扣减库存
+                if (order == null || order.getStatus() != 0) {
+                    LOGGER.warn("支付宝回调忽略：订单不存在或已处理，orderId={}", orderId);
+                    return;
+                }
 
                 // 更新商品库存和销量
                 Product product = productMapper.selectById(order.getProductId());

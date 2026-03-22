@@ -4,12 +4,15 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.example.springboot.entity.Category;
 import org.example.springboot.entity.Product;
+import org.example.springboot.entity.dto.CategoryCreateDTO;
+import org.example.springboot.entity.dto.CategoryUpdateDTO;
 import org.example.springboot.enums.ErrorCodeEnum;
 import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.CategoryMapper;
 import org.example.springboot.mapper.ProductMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,9 +32,73 @@ public class CategoryService {
     private ProductMapper productMapper;
 
     /**
-     * 创建分类
+     * 创建分类（管理员使用，使用 DTO）
      */
-    public Category createCategory(Category category, Long userId) {
+    public Category createCategory(CategoryCreateDTO dto) {
+        Category category = new Category();
+        BeanUtils.copyProperties(dto, category);
+        return doCreateCategory(category, null);
+    }
+
+    /**
+     * 商家申请新增自定义分类（使用 DTO）
+     */
+    public Category applyCustomCategory(CategoryCreateDTO dto, Long userId) {
+        // 商家自定义分类的限制
+        if (dto.getParentId() == null || dto.getParentId() <= 0) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "必须选择父级分类");
+        }
+
+        // 检查父分类是否存在
+        Category parent = categoryMapper.selectById(dto.getParentId());
+        if (parent == null) {
+            throw new BusinessException(ErrorCodeEnum.CATEGORY_NOT_FOUND, "父分类不存在");
+        }
+        if (parent.getLevel() >= 3) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "最多支持三级分类，无法在三级分类下再添加");
+        }
+
+        // 检查名称是否重复（同级别下不能有同名）
+        LambdaQueryWrapper<Category> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(Category::getName, dto.getName())
+                .eq(Category::getParentId, dto.getParentId());
+        Long count = categoryMapper.selectCount(queryWrapper);
+        if (count > 0) {
+            throw new BusinessException(ErrorCodeEnum.ALREADY_EXISTS, "同级分类下已存在同名分类");
+        }
+
+        // 检查是否存在名称包含关系
+        LambdaQueryWrapper<Category> likeQuery = new LambdaQueryWrapper<>();
+        likeQuery.like(Category::getName, dto.getName())
+                .eq(Category::getParentId, dto.getParentId());
+        Long likeCount = categoryMapper.selectCount(likeQuery);
+        if (likeCount > 0) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "分类名称与现有分类相似，请使用其他名称");
+        }
+
+        // 构建分类实体
+        Category category = new Category();
+        BeanUtils.copyProperties(dto, category);
+        category.setLevel(parent.getLevel() + 1);
+        if (category.getSortOrder() == null) {
+            category.setSortOrder(0);
+        }
+        category.setStatus(1);
+        category.setIsCustom(1);
+        category.setCreateUserId(userId);
+
+        int result = categoryMapper.insert(category);
+        if (result > 0) {
+            LOGGER.info("商家申请新增分类成功，分类ID：{}，申请人ID：{}", category.getId(), userId);
+            return category;
+        }
+        throw new BusinessException(ErrorCodeEnum.ERROR, "申请新增分类失败");
+    }
+
+    /**
+     * 内部创建分类逻辑
+     */
+    private Category doCreateCategory(Category category, Long userId) {
         // 参数校验
         if (category.getName() == null || category.getName().trim().isEmpty()) {
             throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "分类名称不能为空");
@@ -73,7 +140,6 @@ public class CategoryService {
             category.setStatus(1);
         }
         if (category.getIsCustom() == null) {
-            // 判断是否为商家自定义分类：如果有用户ID则是自定义，否则是系统预置
             category.setIsCustom(userId != null ? 1 : 0);
         }
         category.setCreateUserId(userId);
@@ -87,27 +153,27 @@ public class CategoryService {
     }
 
     /**
-     * 更新分类
+     * 更新分类（使用 DTO）
      */
-    public Category updateCategory(Long id, Category category) {
+    public Category updateCategory(Long id, CategoryUpdateDTO dto) {
         Category existing = categoryMapper.selectById(id);
         if (existing == null) {
             throw new BusinessException(ErrorCodeEnum.CATEGORY_NOT_FOUND, "分类不存在");
         }
 
         // 检查是否试图修改层级（parentId 或 level）
-        if (category.getParentId() != null && !category.getParentId().equals(existing.getParentId())) {
+        if (dto.getParentId() != null && !dto.getParentId().equals(existing.getParentId())) {
             throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "不允许修改分类层级");
         }
-        if (category.getLevel() != null && !category.getLevel().equals(existing.getLevel())) {
+        if (dto.getLevel() != null && !dto.getLevel().equals(existing.getLevel())) {
             throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "不允许修改分类层级");
         }
 
         // 如果修改了名称，检查同级是否重复
-        if (category.getName() != null && !category.getName().equals(existing.getName())) {
+        if (dto.getName() != null && !dto.getName().equals(existing.getName())) {
             Long parentId = existing.getParentId();
             LambdaQueryWrapper<Category> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(Category::getName, category.getName())
+            queryWrapper.eq(Category::getName, dto.getName())
                     .eq(Category::getParentId, parentId)
                     .ne(Category::getId, id);
             Long count = categoryMapper.selectCount(queryWrapper);
@@ -116,11 +182,14 @@ public class CategoryService {
             }
         }
 
+        // 更新字段
+        Category category = new Category();
         category.setId(id);
-        // 不允许修改层级关系（会导致数据不一致）
-        category.setParentId(null);
-        category.setLevel(null);
-        category.setCreateUserId(null);
+        category.setName(dto.getName());
+        category.setIcon(dto.getIcon());
+        category.setDescription(dto.getDescription());
+        category.setSortOrder(dto.getSortOrder());
+        category.setStatus(dto.getStatus());
 
         int result = categoryMapper.updateById(category);
         if (result > 0) {
@@ -379,61 +448,5 @@ public class CategoryService {
         }
 
         parent.setChildren(children);
-    }
-
-    /**
-     * 商家申请新增自定义分类
-     */
-    public Category applyCustomCategory(Category category, Long userId) {
-        // 商家自定义分类的限制
-        if (category.getName() == null || category.getName().trim().isEmpty()) {
-            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "分类名称不能为空");
-        }
-        if (category.getParentId() == null || category.getParentId() <= 0) {
-            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "必须选择父级分类");
-        }
-
-        // 检查父分类是否存在
-        Category parent = categoryMapper.selectById(category.getParentId());
-        if (parent == null) {
-            throw new BusinessException(ErrorCodeEnum.CATEGORY_NOT_FOUND, "父分类不存在");
-        }
-        if (parent.getLevel() >= 3) {
-            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "最多支持三级分类，无法在三级分类下再添加");
-        }
-
-        // 检查名称是否重复（同级别下不能有同名）
-        LambdaQueryWrapper<Category> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Category::getName, category.getName())
-                .eq(Category::getParentId, category.getParentId());
-        Long count = categoryMapper.selectCount(queryWrapper);
-        if (count > 0) {
-            throw new BusinessException(ErrorCodeEnum.ALREADY_EXISTS, "同级分类下已存在同名分类");
-        }
-
-        // 检查是否存在名称包含关系（如已存在"小麦"，则不能创建"高产小麦"）
-        LambdaQueryWrapper<Category> likeQuery = new LambdaQueryWrapper<>();
-        likeQuery.like(Category::getName, category.getName())
-                .eq(Category::getParentId, category.getParentId());
-        Long likeCount = categoryMapper.selectCount(likeQuery);
-        if (likeCount > 0) {
-            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "分类名称与现有分类相似，请使用其他名称");
-        }
-
-        // 创建商家自定义分类（待审核状态默认启用）
-        category.setLevel(parent.getLevel() + 1);
-        if (category.getSortOrder() == null) {
-            category.setSortOrder(0);
-        }
-        category.setStatus(1); // 商家自定义分类默认启用
-        category.setIsCustom(1); // 标记为商家自定义
-        category.setCreateUserId(userId);
-
-        int result = categoryMapper.insert(category);
-        if (result > 0) {
-            LOGGER.info("商家申请新增分类成功，分类ID：{}，申请人ID：{}", category.getId(), userId);
-            return category;
-        }
-        throw new BusinessException(ErrorCodeEnum.ERROR, "申请新增分类失败");
     }
 }

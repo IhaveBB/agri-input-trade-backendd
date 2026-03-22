@@ -29,8 +29,8 @@ import java.util.stream.Collectors;
  * 6. 线性融合两种得分生成最终推荐
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Slf4j
 @Service
@@ -73,6 +73,12 @@ public class FusionRecommendationService implements RecommendationStrategy {
 
     @Resource
     private RecommendActionService recommendActionService;
+
+    @Resource
+    private RecommendActionMapper recommendActionMapper;
+
+    @Resource
+    private ReviewMapper reviewMapper;
 
     // ==================== 缓存结构 ====================
 
@@ -293,6 +299,8 @@ public class FusionRecommendationService implements RecommendationStrategy {
         log.info("[交互矩阵] 开始构建用户 - 商品交互矩阵");
 
         userInteractionMatrix.clear();
+        // 交互矩阵重建后相似度矩阵必须同步清空，确保重新计算
+        itemSimilarityMatrix.clear();
 
         // 1. 加载购买行为（订单状态为已完成）
         LambdaQueryWrapper<Order> orderWrapper = new LambdaQueryWrapper<>();
@@ -332,7 +340,36 @@ public class FusionRecommendationService implements RecommendationStrategy {
                     recommendationConfig.getCartWeight());
         }
 
-        log.info("[交互矩阵] 构建完成，共{}个用户", userInteractionMatrix.size());
+        // 4. 加载浏览（点击）行为（来自推荐埋点记录）
+        LambdaQueryWrapper<RecommendAction> clickWrapper = new LambdaQueryWrapper<>();
+        clickWrapper.eq(RecommendAction::getActionType, "CLICK");
+        List<RecommendAction> clicks = recommendActionMapper.selectList(clickWrapper);
+
+        for (RecommendAction click : clicks) {
+            if (click.getUserId() == null || click.getProductId() == null) {
+                continue;
+            }
+            addToInteraction(click.getUserId(), click.getProductId(),
+                    recommendationConfig.getClickWeight());
+        }
+
+        // 5. 加载评分行为（以评分值作为交互强度，高分正向信号更强）
+        LambdaQueryWrapper<Review> reviewWrapper = new LambdaQueryWrapper<>();
+        reviewWrapper.isNotNull(Review::getRating).eq(Review::getStatus, 1);
+        List<Review> reviews = reviewMapper.selectList(reviewWrapper);
+
+        for (Review review : reviews) {
+            if (review.getUserId() == null || review.getProductId() == null
+                    || review.getRating() == null || review.getRating() <= 0) {
+                continue;
+            }
+            // 实际权重 = rating(1-5) × reviewWeight，高分贡献更强
+            addToInteraction(review.getUserId(), review.getProductId(),
+                    review.getRating() * recommendationConfig.getReviewWeight());
+        }
+
+        log.info("[交互矩阵] 构建完成，共{}个用户（已整合浏览/收藏/加购/购买/评分5类行为）",
+                userInteractionMatrix.size());
     }
 
     /**

@@ -8,8 +8,8 @@ import java.util.List;
 /**
  * 用户画像 DTO
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Data
 @Schema(description = "用户画像")

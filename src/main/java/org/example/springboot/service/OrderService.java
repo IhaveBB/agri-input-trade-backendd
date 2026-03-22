@@ -9,6 +9,8 @@ import org.example.springboot.entity.OrderBatchRequest;
 import org.example.springboot.entity.Product;
 import org.example.springboot.entity.Logistics;
 import org.example.springboot.entity.Address;
+import org.example.springboot.entity.dto.OrderAddressUpdateDTO;
+import org.example.springboot.entity.dto.OrderCreateDTO;
 import org.example.springboot.enums.ErrorCodeEnum;
 import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.*;
@@ -47,32 +49,43 @@ public class OrderService {
 
 
     /**
-     * 创建订单
+     * 创建订单（使用 DTO）
      *
-     * @param order 订单实体
+     * @param userId 用户ID（从上下文获取）
+     * @param dto    订单创建DTO
      * @return 创建的订单
      * @author IhaveBB
-     * @date 2026/03/18
+     * @date 2026/03/21
      */
-    public Order createOrder(Order order) {
+    public Order createOrder(Long userId, OrderCreateDTO dto) {
         // 检查商品库存
-        Product product = productMapper.selectById(order.getProductId());
+        Product product = productMapper.selectById(dto.getProductId());
         if (product == null) {
             throw new BusinessException(ErrorCodeEnum.PRODUCT_NOT_FOUND);
         }
-        if (product.getStock() < order.getQuantity()) {
+        if (product.getStock() < dto.getQuantity()) {
             throw new BusinessException(ErrorCodeEnum.PRODUCT_STOCK_INSUFFICIENT);
         }
 
-        // 计算总价
-        order.setTotalPrice(order.getPrice().multiply(BigDecimal.valueOf(order.getQuantity())));
+        // 构建订单实体
+        Order order = new Order();
+        order.setUserId(userId);
+        order.setProductId(dto.getProductId());
+        order.setQuantity(dto.getQuantity());
+        order.setPrice(dto.getPrice());
+        order.setTotalPrice(dto.getPrice().multiply(BigDecimal.valueOf(dto.getQuantity())));
+        order.setStatus(0); // 待支付
+        order.setRemark(dto.getRemark());
+        order.setRecvName(dto.getRecvName());
+        order.setRecvPhone(dto.getRecvPhone());
+        order.setRecvAddress(dto.getRecvAddress());
 
         int result = orderMapper.insert(order);
         if (result <= 0) {
             throw new BusinessException(ErrorCodeEnum.ERROR, "创建订单失败");
         }
 
-        LOGGER.info("创建订单成功，订单ID：{}", order.getId());
+        LOGGER.info("创建订单成功，订单ID：{}，用户ID：{}", order.getId(), userId);
         return order;
     }
 
@@ -85,6 +98,7 @@ public class OrderService {
      * @author IhaveBB
      * @date 2026/03/18
      */
+    @Transactional(rollbackFor = Exception.class)
     public Order updateOrderStatus(Long id, Integer status) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
@@ -98,25 +112,7 @@ public class OrderService {
             throw new BusinessException(ErrorCodeEnum.ERROR, "更新订单状态失败");
         }
 
-        // 查找该订单的物流信息
-        LambdaQueryWrapper<Logistics> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Logistics::getOrderId, id);
-        Logistics logistics = logisticsMapper.selectOne(queryWrapper);
-
-        if (logistics != null) {
-            // 如果订单状态变为已退款，更新物流状态为已取消
-            if (status == 6) { // 6表示已退款
-                logistics.setStatus(3); // 3表示已取消
-                logisticsMapper.updateById(logistics);
-                LOGGER.info("订单退款成功，同步更新物流状态为已取消，物流ID：{}", logistics.getId());
-            }
-            // 如果订单状态变为已完成，更新物流状态为已签收
-            else if (status == 3) { // 3表示已完成
-                logistics.setStatus(2); // 2表示已签收
-                logisticsMapper.updateById(logistics);
-                LOGGER.info("订单已完成，同步更新物流状态为已签收，物流ID：{}", logistics.getId());
-            }
-        }
+        syncLogisticsOnStatusChange(id, status);
 
         LOGGER.info("更新订单状态成功，订单ID：{}，新状态：{}", id, status);
         return order;
@@ -138,6 +134,42 @@ public class OrderService {
         LOGGER.info("删除订单成功，订单ID：{}", id);
     }
 
+    /**
+     * 根据订单新状态同步物流状态
+     * <p>
+     * 状态映射规则：订单退款（6）→ 物流取消（3）；订单完成（3）→ 物流签收（2）。
+     * </p>
+     *
+     * @param orderId   订单ID
+     * @param newStatus 订单新状态
+     * @author IhaveBB
+     * @date 2026/03/21
+     */
+    private void syncLogisticsOnStatusChange(Long orderId, Integer newStatus) {
+        LambdaQueryWrapper<Logistics> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(Logistics::getOrderId, orderId);
+        Logistics logistics = logisticsMapper.selectOne(queryWrapper);
+        if (logistics == null) {
+            return;
+        }
+        if (newStatus == 6) {
+            logistics.setStatus(3); // 已取消
+            logisticsMapper.updateById(logistics);
+            LOGGER.info("订单退款成功，同步更新物流状态为已取消，物流ID：{}", logistics.getId());
+        } else if (newStatus == 3) {
+            logistics.setStatus(2); // 已签收
+            logisticsMapper.updateById(logistics);
+            LOGGER.info("订单已完成，同步更新物流状态为已签收，物流ID：{}", logistics.getId());
+        }
+    }
+
+    /**
+     * 删除订单关联的物流信息
+     *
+     * @param id 订单ID
+     * @author IhaveBB
+     * @date 2026/03/21
+     */
     public void deleteRelation(Long id){
         logisticsMapper.delete(new LambdaQueryWrapper<Logistics>().eq(Logistics::getOrderId,id));
     }
@@ -184,6 +216,22 @@ public class OrderService {
         return orders;
     }
 
+    /**
+     * 分页查询订单列表
+     * <p>
+     * 支持按用户ID、订单ID、状态、商户ID过滤；商户维度查询时先查商品再关联订单。
+     * </p>
+     *
+     * @param userId      用户ID（可为 null，管理员场景）
+     * @param id          订单ID（精确查找，可为 null）
+     * @param status      订单状态（可为 null）
+     * @param merchantId  商户ID（非 null 时只返回该商户的订单，可为 null）
+     * @param currentPage 当前页码
+     * @param size        每页条数
+     * @return 分页订单列表，含关联用户、商品、商户信息
+     * @author IhaveBB
+     * @date 2026/03/21
+     */
     public Page<Order> getOrdersByPage(Long userId,Long id,String status, Long merchantId,Integer currentPage, Integer size) {
         LambdaQueryWrapper<Order> queryWrapper = new LambdaQueryWrapper<>();
         if (userId != null) {
@@ -323,17 +371,15 @@ public class OrderService {
     }
 
     /**
-     * 更新订单收货地址
+     * 更新订单收货地址（使用 DTO）
      *
-     * @param name    收货人姓名
-     * @param id      订单ID
-     * @param address 收货地址
-     * @param phone   联系电话
+     * @param id  订单ID
+     * @param dto 收货地址更新DTO
      * @return 更新后的订单
      * @author IhaveBB
-     * @date 2026/03/18
+     * @date 2026/03/21
      */
-    public Order updateOrderAddress(String name, Long id, String address, String phone) {
+    public Order updateOrderAddress(Long id, OrderAddressUpdateDTO dto) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
             throw new BusinessException(ErrorCodeEnum.ORDER_NOT_FOUND);
@@ -343,9 +389,9 @@ public class OrderService {
         if (order.getStatus() > 1) {
             throw new BusinessException(ErrorCodeEnum.ORDER_STATUS_INVALID, "订单已发货，无法修改收货地址");
         }
-        order.setRecvName(name);
-        order.setRecvAddress(address);
-        order.setRecvPhone(phone);
+        order.setRecvName(dto.getRecvName());
+        order.setRecvAddress(dto.getRecvAddress());
+        order.setRecvPhone(dto.getRecvPhone());
 
         int result = orderMapper.updateById(order);
         if (result <= 0) {
@@ -383,24 +429,9 @@ public class OrderService {
             throw new BusinessException(ErrorCodeEnum.ERROR, "更新订单信息失败");
         }
 
-        // 查找该订单的物流信息
-        LambdaQueryWrapper<Logistics> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Logistics::getOrderId, id);
-        Logistics logistics = logisticsMapper.selectOne(queryWrapper);
-
-        if (logistics != null) {
-            // 如果订单状态变为已退款，更新物流状态为已取消
-            if (order.getStatus() == 6 && existingOrder.getStatus() != 6) {
-                logistics.setStatus(3); // 3表示已取消
-                logisticsMapper.updateById(logistics);
-                LOGGER.info("订单退款成功，同步更新物流状态为已取消，物流ID：{}", logistics.getId());
-            }
-            // 如果订单状态变为已完成，更新物流状态为已签收
-            else if (order.getStatus() == 3 && existingOrder.getStatus() != 3) {
-                logistics.setStatus(2); // 2表示已签收
-                logisticsMapper.updateById(logistics);
-                LOGGER.info("订单已完成，同步更新物流状态为已签收，物流ID：{}", logistics.getId());
-            }
+        // 仅在状态发生变化时同步物流
+        if (!existingOrder.getStatus().equals(order.getStatus())) {
+            syncLogisticsOnStatusChange(id, order.getStatus());
         }
 
         LOGGER.info("更新订单成功，订单ID：{}", id);
@@ -437,17 +468,13 @@ public class OrderService {
     }
 
     /**
-     * 处理退款申请
-     * @param id 订单ID
-     * @param status 退款状态：6-同意退款, 7-拒绝退款
-     * @param remark 处理备注
-     * @return 处理结果
-     */
-    /**
      * 判断订单是否属于指定商户
-     * @param orderId 订单ID
+     *
+     * @param orderId    订单ID
      * @param merchantId 商户ID
-     * @return 是否属于该商户
+     * @return 订单对应的商品归属该商户时返回 true，否则返回 false
+     * @author IhaveBB
+     * @date 2026/03/21
      */
     public boolean isOrderBelongToMerchant(Long orderId, Long merchantId) {
         Order order = orderMapper.selectById(orderId);
@@ -471,6 +498,7 @@ public class OrderService {
      * @author IhaveBB
      * @date 2026/03/18
      */
+    @Transactional(rollbackFor = Exception.class)
     public Order handleRefund(Long id, Integer status, String remark) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
@@ -511,14 +539,7 @@ public class OrderService {
         }
 
         // 同步更新物流状态
-        LambdaQueryWrapper<Logistics> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Logistics::getOrderId, id);
-        Logistics logistics = logisticsMapper.selectOne(queryWrapper);
-        if (logistics != null && status == 6) { // 如果同意退款
-            logistics.setStatus(3); // 设置物流状态为已取消
-            logisticsMapper.updateById(logistics);
-            LOGGER.info("订单退款成功，同步更新物流状态为已取消，物流ID：{}", logistics.getId());
-        }
+        syncLogisticsOnStatusChange(id, status);
 
         LOGGER.info("处理退款成功，订单ID：{}，处理结果：{}", id, status == 6 ? "已退款" : "拒绝退款");
         return order;

@@ -2,9 +2,11 @@ package org.example.springboot.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.example.springboot.annotation.RequiresRole;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.Favorite;
+import org.example.springboot.entity.dto.FavoriteCreateDTO;
 import org.example.springboot.enumClass.UserRole;
 import org.example.springboot.enums.ErrorCodeEnum;
 import org.example.springboot.exception.BusinessException;
@@ -35,21 +37,19 @@ public class FavoriteController {
 
     /**
      * 创建收藏
-     * 权限：需要登录，强制使用当前用户ID
+     * 权限：需要登录，userId 从上下文获取
      *
-     * @param favorite 收藏实体（包含商品ID）
+     * @param dto 收藏创建DTO
      * @return 创建后的收藏记录
      * @author IhaveBB
-     * @date 2026/03/19
+     * @date 2026/03/21
      */
     @Operation(summary = "创建收藏")
     @RequiresRole
     @PostMapping
-    public Result<?> createFavorite(@RequestBody Favorite favorite) {
+    public Result<?> createFavorite(@Valid @RequestBody FavoriteCreateDTO dto) {
         Long currentUserId = UserContext.getUserId();
-        // 强制使用当前登录用户ID，防止伪造
-        favorite.setUserId(currentUserId);
-        return Result.success(favoriteService.createFavorite(favorite));
+        return Result.success(favoriteService.createFavorite(currentUserId, dto));
     }
 
     /**
@@ -128,6 +128,22 @@ public class FavoriteController {
         }
 
         return Result.success(favorite);
+    }
+
+    /**
+     * 获取当前用户收藏列表
+     * 权限：需要登录
+     *
+     * @return 收藏列表
+     * @author IhaveBB
+     * @date 2026/03/21
+     */
+    @Operation(summary = "获取当前用户收藏列表")
+    @RequiresRole
+    @GetMapping("/my")
+    public Result<?> getMyFavorites() {
+        Long currentUserId = UserContext.getUserId();
+        return Result.success(favoriteService.getFavoritesByUserId(currentUserId));
     }
 
     /**

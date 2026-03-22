@@ -10,8 +10,8 @@ import lombok.RequiredArgsConstructor;
  * 权重设计依据：行为强度越强，权重越高
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Getter
 @RequiredArgsConstructor

@@ -17,8 +17,8 @@ import java.util.List;
  * 提供推荐算法离线评估接口，用于论文实验对比
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Slf4j
 @Tag(name = "推荐算法评估", description = "推荐算法离线评估指标计算")

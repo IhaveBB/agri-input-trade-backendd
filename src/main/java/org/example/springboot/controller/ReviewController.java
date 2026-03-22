@@ -2,16 +2,19 @@ package org.example.springboot.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.example.springboot.annotation.RequiresRole;
 import org.example.springboot.common.Result;
-import org.example.springboot.entity.Review;
+import org.example.springboot.entity.dto.ReviewCreateDTO;
+import org.example.springboot.enumClass.UserRole;
+import org.example.springboot.enums.ErrorCodeEnum;
+import org.example.springboot.exception.BusinessException;
 import org.example.springboot.service.ReviewService;
+import org.example.springboot.util.UserContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @Tag(name = "评价管理接口")
 @RestController
@@ -24,18 +27,19 @@ public class ReviewController {
 
     /**
      * 创建评价
-     * 权限：需要登录
+     * 权限：需要登录，userId 从上下文获取
      *
-     * @param review 评价实体
+     * @param dto 评价创建DTO
      * @return 创建结果
      * @author IhaveBB
-     * @date 2026/03/19
+     * @date 2026/03/21
      */
     @Operation(summary = "创建评价")
     @RequiresRole
     @PostMapping
-    public Result<?> createReview(@RequestBody Review review) {
-        return Result.success(reviewService.createReview(review));
+    public Result<?> createReview(@Valid @RequestBody ReviewCreateDTO dto) {
+        Long currentUserId = UserContext.getUserId();
+        return Result.success(reviewService.createReview(currentUserId, dto));
     }
 
     /**
@@ -58,7 +62,7 @@ public class ReviewController {
 
     /**
      * 删除评价
-     * 权限：只有管理员
+     * 权限：管理员可删除任何评价，普通用户只能删除自己的评价
      *
      * @param id 评价ID
      * @return 操作结果
@@ -66,9 +70,20 @@ public class ReviewController {
      * @date 2026/03/19
      */
     @Operation(summary = "删除评价")
-    @RequiresRole("ADMIN")
+    @RequiresRole
     @DeleteMapping("/{id}")
     public Result<?> deleteReview(@PathVariable Long id) {
+        Long currentUserId = UserContext.getUserId();
+        String role = UserContext.getRole();
+
+        // 管理员可以删除任何评价，普通用户只能删除自己的评价
+        if (!UserRole.isAdmin(role)) {
+            var review = reviewService.getReviewById(id);
+            if (review != null && !review.getUserId().equals(currentUserId)) {
+                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限删除他人评价");
+            }
+        }
+
         reviewService.deleteReview(id);
         return Result.success();
     }
@@ -91,7 +106,7 @@ public class ReviewController {
     public Result<?> getReviewsByPage(
             @RequestParam(required = false) Long productId,
             @RequestParam(required = false) String productName,
-            @RequestParam(required = false) Integer userId,
+            @RequestParam(required = false) Long userId,
             @RequestParam(required = false) String username,
             @RequestParam(required = false) Long merchantId,
             @RequestParam(required = false) Integer status,
@@ -100,5 +115,3 @@ public class ReviewController {
         return Result.success(reviewService.getReviewsByPage(productId, productName,userId,username,merchantId, status, currentPage, size));
     }
 }
-
- 

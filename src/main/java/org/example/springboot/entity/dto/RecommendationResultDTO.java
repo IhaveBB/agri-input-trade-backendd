@@ -8,8 +8,8 @@ import java.util.List;
 /**
  * 推荐结果 DTO
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Data
 @Schema(description = "推荐结果")

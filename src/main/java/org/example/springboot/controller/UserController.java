@@ -3,11 +3,15 @@ package org.example.springboot.controller;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.example.springboot.annotation.RequiresRole;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.User;
 import org.example.springboot.entity.UserPasswordUpdate;
+import org.example.springboot.entity.dto.LoginDTO;
 import org.example.springboot.entity.dto.UserLocationDTO;
+import org.example.springboot.entity.dto.UserRegisterDTO;
+import org.example.springboot.entity.dto.UserUpdateDTO;
 import org.example.springboot.enumClass.UserRole;
 import org.example.springboot.enums.ErrorCodeEnum;
 import org.example.springboot.exception.BusinessException;
@@ -82,7 +86,7 @@ public class UserController {
         String role = UserContext.getRole();
 
         // 权限检查
-        if (currentUserId != null && !usernameFromContext.equals(username) && !UserRole.isAdmin(role)) {
+        if (currentUserId != null && !username.equals(usernameFromContext) && !UserRole.isAdmin(role)) {
             throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限查看他人信息");
         }
 
@@ -95,15 +99,15 @@ public class UserController {
      * 用户登录
      * 无需权限验证
      *
-     * @param user 登录信息（用户名和密码）
+     * @param dto 登录信息
      * @return 登录成功后的用户信息（含token）
      * @author IhaveBB
-     * @date 2026/03/19
+     * @date 2026/03/21
      */
     @Operation(summary = "登录")
     @PostMapping("/login")
-    public Result<?> login(@RequestBody User user) {
-        return Result.success(userService.login(user));
+    public Result<?> login(@Valid @RequestBody LoginDTO dto) {
+        return Result.success(userService.login(dto));
     }
 
     /**
@@ -258,15 +262,16 @@ public class UserController {
      * 创建新用户（注册）
      * 无需权限验证
      *
-     * @param user 用户信息
+     * @param dto 用户注册信息
      * @return 创建后的用户
      * @author IhaveBB
-     * @date 2026/03/19
+     * @date 2026/03/21
      */
     @Operation(summary = "创建新用户")
     @PostMapping("/add")
-    public Result<?> createUser(@RequestBody User user) {
-        userService.createUser(user);
+    public Result<?> createUser(@Valid @RequestBody UserRegisterDTO dto) {
+        User user = userService.createUser(dto);
+        user.setPassword(null);
         return Result.success(user);
     }
 
@@ -274,15 +279,15 @@ public class UserController {
      * 更新用户信息
      * 权限：只能更新自己的信息，管理员可以更新任何人的信息
      *
-     * @param id   用户ID
-     * @param user 用户信息
+     * @param id  用户ID
+     * @param dto 用户更新信息
      * @return 更新后的用户
      * @author IhaveBB
-     * @date 2026/03/19
+     * @date 2026/03/21
      */
     @Operation(summary = "更新用户信息")
     @PutMapping("/{id}")
-    public Result<?> updateUser(@PathVariable Long id, @RequestBody User user) {
+    public Result<?> updateUser(@PathVariable Long id, @Valid @RequestBody UserUpdateDTO dto) {
         Long currentUserId = UserContext.getUserId();
         String role = UserContext.getRole();
 
@@ -291,12 +296,8 @@ public class UserController {
             throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限更新他人信息");
         }
 
-        // 禁止普通用户修改自己的角色
-        if (currentUserId != null && currentUserId.equals(id) && UserRole.isUser(role)) {
-            user.setRole(role);
-        }
-
-        userService.updateUser(id, user);
+        User user = userService.updateUser(id, dto, role);
+        user.setPassword(null);
         return Result.success(user);
     }
 

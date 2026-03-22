@@ -28,7 +28,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(UserContext.UserNotLoginException.class)
     public Result<?> handleUserNotLogin(UserContext.UserNotLoginException e) {
         logger.warn("用户未登录: {}", e.getMessage(), e);
-        return Result.error("-1", "用户未登录，请先登录");
+        return Result.error(ErrorCodeEnum.UNAUTHORIZED.getCode(), "用户未登录，请先登录");
     }
 
     /**
@@ -37,7 +37,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(UserContext.PermissionDeniedException.class)
     public Result<?> handlePermissionDenied(UserContext.PermissionDeniedException e) {
         logger.warn("权限不足: {}", e.getMessage(), e);
-        return Result.error("-1", e.getMessage());
+        return Result.error(ErrorCodeEnum.FORBIDDEN.getCode(), e.getMessage());
     }
 
     /**
@@ -85,6 +85,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public Result<?> handleException(Exception e) {
         logger.error("系统异常: ", e);
-        return Result.error(ErrorCodeEnum.INTERNAL_ERROR.getCode(), "系统异常: " + e.getMessage());
+        return Result.error(ErrorCodeEnum.INTERNAL_ERROR.getCode(), "系统异常，请联系管理员");
     }
 }

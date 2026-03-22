@@ -120,6 +120,40 @@ public class StockController {
     }
 
     /**
+     * 删除入库记录
+     * 权限：商户或管理员
+     *
+     * @param id 入库记录ID
+     * @return 操作结果
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    @Operation(summary = "删除入库记录")
+    @RequiresRole({"MERCHANT", "ADMIN"})
+    @DeleteMapping("/in/{id}")
+    public Result<?> deleteStockIn(@PathVariable Long id) {
+        stockService.deleteStockIn(id);
+        return Result.success();
+    }
+
+    /**
+     * 删除出库记录
+     * 权限：商户或管理员
+     *
+     * @param id 出库记录ID
+     * @return 操作结果
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    @Operation(summary = "删除出库记录")
+    @RequiresRole({"MERCHANT", "ADMIN"})
+    @DeleteMapping("/out/{id}")
+    public Result<?> deleteStockOut(@PathVariable Long id) {
+        stockService.deleteStockOut(id);
+        return Result.success();
+    }
+
+    /**
      * 作废入库记录
      * 权限：只有管理员
      *

@@ -2,11 +2,11 @@ package org.example.springboot.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.example.springboot.annotation.RequiresRole;
 import org.example.springboot.common.Result;
-import org.example.springboot.entity.Category;
-import org.example.springboot.enums.ErrorCodeEnum;
-import org.example.springboot.exception.BusinessException;
+import org.example.springboot.entity.dto.CategoryCreateDTO;
+import org.example.springboot.entity.dto.CategoryUpdateDTO;
 import org.example.springboot.service.CategoryService;
 import org.example.springboot.util.UserContext;
 import org.slf4j.Logger;
@@ -36,50 +36,50 @@ public class CategoryController {
      * 创建分类（管理员）
      * 权限：只有管理员
      *
-     * @param category 分类实体
+     * @param dto 分类创建DTO
      * @return 创建后的分类
      * @author IhaveBB
-     * @date 2026/03/19
+     * @date 2026/03/21
      */
     @Operation(summary = "创建分类（管理员）")
     @RequiresRole("ADMIN")
     @PostMapping
-    public Result<?> createCategory(@RequestBody Category category) {
-        return Result.success(categoryService.createCategory(category, null));
+    public Result<?> createCategory(@Valid @RequestBody CategoryCreateDTO dto) {
+        return Result.success(categoryService.createCategory(dto));
     }
 
     /**
      * 商家申请新增自定义分类
-     * 权限：需要登录
+     * 权限：需要登录，createUserId 从上下文获取
      *
-     * @param category 分类实体
+     * @param dto 分类创建DTO
      * @return 申请结果
      * @author IhaveBB
-     * @date 2026/03/19
+     * @date 2026/03/21
      */
     @Operation(summary = "商家申请新增自定义分类")
     @RequiresRole
     @PostMapping("/custom")
-    public Result<?> applyCustomCategory(@RequestBody Category category) {
+    public Result<?> applyCustomCategory(@Valid @RequestBody CategoryCreateDTO dto) {
         Long userId = UserContext.getUserId();
-        return Result.success(categoryService.applyCustomCategory(category, userId));
+        return Result.success(categoryService.applyCustomCategory(dto, userId));
     }
 
     /**
      * 更新分类信息
      * 权限：只有管理员
      *
-     * @param id       分类ID
-     * @param category 分类实体
+     * @param id  分类ID
+     * @param dto 分类更新DTO
      * @return 操作结果
      * @author IhaveBB
-     * @date 2026/03/19
+     * @date 2026/03/21
      */
     @Operation(summary = "更新分类信息")
     @RequiresRole("ADMIN")
     @PutMapping("/{id}")
-    public Result<?> updateCategory(@PathVariable Long id, @RequestBody Category category) {
-        categoryService.updateCategory(id, category);
+    public Result<?> updateCategory(@PathVariable Long id, @Valid @RequestBody CategoryUpdateDTO dto) {
+        categoryService.updateCategory(id, dto);
         return Result.success();
     }
 

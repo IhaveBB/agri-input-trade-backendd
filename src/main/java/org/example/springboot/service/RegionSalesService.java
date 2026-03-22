@@ -24,8 +24,8 @@ import java.util.stream.Collectors;
  * 提供地域销售数据统计和热力图数据支持
  * </p>
  *
- * @author agri-input-trade
- * @version 1.0
+ * @author IhaveBB
+ * @date 2026/03/21
  */
 @Slf4j
 @Service
