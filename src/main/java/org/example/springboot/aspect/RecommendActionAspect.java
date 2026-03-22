@@ -12,6 +12,7 @@ import org.example.springboot.entity.Order;
 import org.example.springboot.entity.Product;
 import org.example.springboot.mapper.OrderMapper;
 import org.example.springboot.mapper.ProductMapper;
+import org.example.springboot.service.FusionRecommendationService;
 import org.example.springboot.service.RecommendActionService;
 import org.example.springboot.util.UserContext;
 import org.slf4j.Logger;
@@ -34,6 +35,9 @@ public class RecommendActionAspect {
 
     @Resource
     private RecommendActionService recommendActionService;
+
+    @Resource
+    private FusionRecommendationService fusionRecommendationService;
 
     @Resource
     private ProductMapper productMapper;
@@ -95,11 +99,15 @@ public class RecommendActionAspect {
                             Product product = (Product) data;
                             Long categoryId = product.getCategoryId();
 
+                            // 判断来源：如果商品在用户的推荐列表中，则标记为 RECOMMEND
+                            String source = fusionRecommendationService.isProductRecommended(userId, productId)
+                                    ? "RECOMMEND" : "NATURAL";
+
                             recommendActionService.recordClick(
                                     userId, productId, categoryId,
-                                    "NATURAL", "PRODUCT_DETAIL", null, null
+                                    source, "PRODUCT_DETAIL", null, null
                             );
-                            LOGGER.debug("[埋点AOP] 用户{}点击商品{}", userId, productId);
+                            LOGGER.debug("[埋点AOP] 用户{}点击商品{}，来源：{}", userId, productId, source);
                         }
                     }
                 }
@@ -145,13 +153,17 @@ public class RecommendActionAspect {
                             LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
                         }
 
+                        // 判断来源：如果商品在用户的推荐列表中，则标记为 RECOMMEND
+                        String source = fusionRecommendationService.isProductRecommended(favorite.getUserId(), favorite.getProductId())
+                                ? "RECOMMEND" : "NATURAL";
+
                         recommendActionService.recordCollect(
                                 favorite.getUserId(),
                                 favorite.getProductId(),
                                 categoryId,
-                                "NATURAL", "PRODUCT_DETAIL", null, null
+                                source, "PRODUCT_DETAIL", null, null
                         );
-                        LOGGER.debug("[埋点AOP] 用户{}收藏商品{}", favorite.getUserId(), favorite.getProductId());
+                        LOGGER.debug("[埋点AOP] 用户{}收藏商品{}，来源：{}", favorite.getUserId(), favorite.getProductId(), source);
                     }
                 }
             }
@@ -196,13 +208,17 @@ public class RecommendActionAspect {
                             LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
                         }
 
+                        // 判断来源：如果商品在用户的推荐列表中，则标记为 RECOMMEND
+                        String source = fusionRecommendationService.isProductRecommended(cart.getUserId(), cart.getProductId())
+                                ? "RECOMMEND" : "NATURAL";
+
                         recommendActionService.recordCart(
                                 cart.getUserId(),
                                 cart.getProductId(),
                                 categoryId,
-                                "NATURAL", "PRODUCT_DETAIL", null, null
+                                source, "PRODUCT_DETAIL", null, null
                         );
-                        LOGGER.debug("[埋点AOP] 用户{}加购商品{}", cart.getUserId(), cart.getProductId());
+                        LOGGER.debug("[埋点AOP] 用户{}加购商品{}，来源：{}", cart.getUserId(), cart.getProductId(), source);
                     }
                 }
             }
@@ -253,13 +269,17 @@ public class RecommendActionAspect {
                             LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
                         }
 
+                        // 判断来源：如果商品在用户的推荐列表中，则标记为 RECOMMEND
+                        String source = fusionRecommendationService.isProductRecommended(userId, productId)
+                                ? "RECOMMEND" : "NATURAL";
+
                         recommendActionService.recordBuy(
                                 userId,
                                 productId,
                                 categoryId,
-                                "NATURAL", "PRODUCT_DETAIL", null, null
+                                source, "PRODUCT_DETAIL", null, null
                         );
-                        LOGGER.debug("[埋点AOP] 用户{}支付订单{}, 商品{}", userId, orderId, productId);
+                        LOGGER.debug("[埋点AOP] 用户{}支付订单{}, 商品{}，来源：{}", userId, orderId, productId, source);
                     }
                 }
             }

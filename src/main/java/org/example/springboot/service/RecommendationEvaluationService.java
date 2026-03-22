@@ -276,6 +276,17 @@ public class RecommendationEvaluationService {
 
     /**
      * 计算NDCG (Normalized Discounted Cumulative Gain)
+     * <p>
+     * DCG = Σ (rel_i / log₂(i+1))，其中 i 从 1 开始
+     * IDCG = Σ (1 / log₂(i+1))，i 从 1 到 |relevant|
+     * NDCG = DCG / IDCG
+     * </p>
+     *
+     * @param recommendations 推荐结果列表
+     * @param actual          实际购买商品集合
+     * @return NDCG 值（0-1）
+     * @author IhaveBB
+     * @date 2026/03/22
      */
     private double calculateNDCG(List<RecommendationResultDTO> recommendations,
                                   Set<Long> actual) {
@@ -283,21 +294,21 @@ public class RecommendationEvaluationService {
             return 0.0;
         }
 
-        // 计算DCG
+        // 计算DCG（使用 log₂，位置从 1 开始计数）
         double dcg = 0.0;
         for (int i = 0; i < recommendations.size(); i++) {
             Long productId = recommendations.get(i).getProductId();
             if (actual.contains(productId)) {
-                // 相关项的收益为1，位置越靠前权重越高
-                dcg += 1.0 / Math.log(i + 2); // log(i+2) 因为i从0开始
+                // 位置 i+1（从1开始），log₂(i+2) 因为 i 从 0 开始
+                dcg += 1.0 / (Math.log(i + 2) / Math.log(2));
             }
         }
 
-        // 计算IDCG (理想情况)
+        // 计算IDCG (理想情况：所有相关项都排在最前面)
         double idcg = 0.0;
         int relevantCount = Math.min(actual.size(), recommendations.size());
         for (int i = 0; i < relevantCount; i++) {
-            idcg += 1.0 / Math.log(i + 2);
+            idcg += 1.0 / (Math.log(i + 2) / Math.log(2));
         }
 
         return idcg > 0 ? dcg / idcg : 0.0;
@@ -305,6 +316,17 @@ public class RecommendationEvaluationService {
 
     /**
      * 计算AP (Average Precision)
+     * <p>
+     * AP = (Σ Precision@k × rel(k)) / |relevant|
+     * 其中 Precision@k 是前 k 个位置的准确率，rel(k) 是第 k 个位置是否相关（1/0）
+     * 分母是相关项的总数 |relevant|，不是命中的次数
+     * </p>
+     *
+     * @param recommended 推荐商品ID列表
+     * @param actual      实际购买商品集合
+     * @return AP 值（0-1）
+     * @author IhaveBB
+     * @date 2026/03/22
      */
     private double calculateAP(List<Long> recommended, Set<Long> actual) {
         if (recommended.isEmpty() || actual.isEmpty()) {
@@ -321,14 +343,21 @@ public class RecommendationEvaluationService {
             }
         }
 
-        return hitCount > 0 ? sumPrecision / hitCount : 0.0;
+        // 除以相关项总数 |relevant|，不是 hitCount
+        return actual.size() > 0 ? sumPrecision / actual.size() : 0.0;
     }
 
     /**
-     * 获取测试用户列表（有购买行为的用户）
+     * 获取测试用户列表（有已完成购买行为的用户）
+     *
+     * @return 有购买行为的用户ID列表
+     * @author IhaveBB
+     * @date 2026/03/22
      */
     private List<Long> getTestUsers() {
-        List<Order> orders = orderMapper.selectList(null);
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Order::getStatus, 3); // 只查询已完成订单
+        List<Order> orders = orderMapper.selectList(wrapper);
         return orders.stream()
                 .map(Order::getUserId)
                 .filter(Objects::nonNull)

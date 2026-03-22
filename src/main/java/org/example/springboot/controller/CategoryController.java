@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.example.springboot.annotation.RequiresRole;
 import org.example.springboot.common.Result;
+import org.example.springboot.entity.dto.CategoryAuditDTO;
 import org.example.springboot.entity.dto.CategoryCreateDTO;
 import org.example.springboot.entity.dto.CategoryUpdateDTO;
 import org.example.springboot.service.CategoryService;
@@ -213,5 +214,66 @@ public class CategoryController {
     public Result<?> deleteBatch(@RequestParam List<Long> ids) {
         categoryService.deleteBatch(ids);
         return Result.success();
+    }
+
+    /**
+     * 管理员审核商家自定义分类申请
+     * <p>
+     * auditStatus=1 表示通过，分类立即启用；
+     * auditStatus=2 表示拒绝，需填写 auditRemark
+     * </p>
+     *
+     * @param id  分类ID
+     * @param dto 审核请求体
+     * @return 审核后的分类信息
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    @Operation(summary = "审核商家自定义分类申请（管理员）")
+    @RequiresRole("ADMIN")
+    @PutMapping("/{id}/audit")
+    public Result<?> auditCategoryApplication(@PathVariable Long id,
+                                               @Valid @RequestBody CategoryAuditDTO dto) {
+        Long adminId = UserContext.getUserId();
+        return Result.success(categoryService.auditCategoryApplication(id, dto, adminId));
+    }
+
+    /**
+     * 管理员查询所有自定义分类申请列表
+     *
+     * @param auditStatus 审核状态过滤（不传=全部，0=待审核，1=已通过，2=已拒绝）
+     * @param currentPage 当前页，默认1
+     * @param size        每页大小，默认10
+     * @return 分页分类申请列表
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    @Operation(summary = "查询所有自定义分类申请（管理员）")
+    @RequiresRole("ADMIN")
+    @GetMapping("/applications")
+    public Result<?> getApplications(
+            @RequestParam(required = false) Integer auditStatus,
+            @RequestParam(defaultValue = "1") Integer currentPage,
+            @RequestParam(defaultValue = "10") Integer size) {
+        return Result.success(categoryService.getCustomCategoryApplications(auditStatus, currentPage, size));
+    }
+
+    /**
+     * 商家查询自己的分类申请列表
+     *
+     * @param currentPage 当前页，默认1
+     * @param size        每页大小，默认10
+     * @return 分页申请列表（含审核状态）
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    @Operation(summary = "商家查询自己的分类申请列表")
+    @RequiresRole
+    @GetMapping("/my-applications")
+    public Result<?> getMyApplications(
+            @RequestParam(defaultValue = "1") Integer currentPage,
+            @RequestParam(defaultValue = "10") Integer size) {
+        Long userId = UserContext.getUserId();
+        return Result.success(categoryService.getMyApplications(userId, currentPage, size));
     }
 }

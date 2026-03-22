@@ -106,72 +106,106 @@ public class RecommendationContext {
     /**
      * 智能选择策略并执行推荐
      * <p>
-     * 根据用户状态智能选择最合适的推荐策略：
-     * - 新用户/冷启动：优先新品推荐 + 热销推荐
-     * - 正常用户：融合推荐 + 补充新品
+     * 根据用户状态智能选择最合适的推荐策略，严格按照论文描述的冷启动分支：
+     * <ul>
+     *   <li>新用户 + 有注册信息（地域/关注作物）→ 纯画像推荐（优先基于注册信息匹配商品）</li>
+     *   <li>新用户 + 无注册信息 / 未登录 → 热销商品推荐（降级策略）</li>
+     *   <li>正常用户 → 融合推荐(80%) + 新品补充(20%)，数量不足时热销兜底</li>
+     * </ul>
      * </p>
      *
-     * @param userId          用户ID
-     * @param userProfile     用户画像
-     * @param isNewUser       是否新用户
-     * @param totalLimit      总推荐数量
-     * @return 推荐结果
+     * @param userId      用户ID（未登录可为null）
+     * @param userProfile 用户画像（可为null）
+     * @param isNewUser   是否新用户（totalPurchases为null或0）
+     * @param totalLimit  总推荐数量
+     * @return 推荐结果列表
+     * @author IhaveBB
+     * @date 2026/03/22
      */
     public List<RecommendationResultDTO> smartRecommend(Long userId,
                                                          UserProfileDTO userProfile,
                                                          boolean isNewUser,
                                                          int totalLimit) {
+        boolean hasProfile = userProfile != null && hasProfileInfo(userProfile);
+        log.info("[智能推荐] 用户{}，新用户={}, 画像有效={}",
+                userId, isNewUser, hasProfile);
+
         List<RecommendationResultDTO> results = new ArrayList<>();
 
-        if (isNewUser || userProfile == null) {
-            // 冷启动场景：新品(60%) + 热销(40%)
-            int newProductCount = (int) (totalLimit * 0.6);
-            int hotProductCount = totalLimit - newProductCount;
-
-            List<RecommendationResultDTO> newProducts = newProductStrategy.recommend(userId, userProfile, newProductCount);
-            results.addAll(newProducts);
-
-            // 去重后补充热销商品
-            List<RecommendationResultDTO> hotProducts = hotProductStrategy.recommend(userId, userProfile, hotProductCount);
-            for (RecommendationResultDTO hot : hotProducts) {
-                if (results.stream().noneMatch(r -> r.getProductId().equals(hot.getProductId()))) {
-                    results.add(hot);
-                }
+        if (isNewUser) {
+            if (hasProfile) {
+                // 新用户有注册信息（地域/关注作物）→ 优先基于注册信息的纯画像推荐
+                log.info("[智能推荐] 策略选择：画像冷启动（地域: {}, 偏好作物: {}）",
+                        userProfile.getRegionName(), userProfile.getPreferredCropNames());
+                results = fusionRecommendationService.recommendByProfileOnly(userId, userProfile, totalLimit);
+            } else {
+                // 新用户无画像信息或未登录 → 降级为热销推荐
+                log.info("[智能推荐] 策略选择：热销降级（新用户无注册信息或未登录）");
+                return hotProductStrategy.recommend(userId, userProfile, totalLimit);
             }
         } else {
-            // 正常用户：融合推荐(80%) + 新品(20%)
+            // 正常用户：融合推荐(80%) + 新品补充(20%)
             int fusionCount = (int) (totalLimit * 0.8);
             int newProductCount = totalLimit - fusionCount;
+            log.info("[智能推荐] 策略选择：融合推荐（融合{}条 + 新品补充{}条）",
+                    fusionCount, newProductCount);
 
             List<RecommendationResultDTO> fusionResults = fusionRecommendationService.recommend(userId);
             results.addAll(fusionResults.subList(0, Math.min(fusionCount, fusionResults.size())));
+            log.info("[智能推荐] 融合推荐实际获取{}条", results.size());
 
-            // 补充新品推荐
-            List<RecommendationResultDTO> newProducts = newProductStrategy.recommend(userId, userProfile, newProductCount);
+            // 去重后补充新品推荐
+            List<RecommendationResultDTO> newProducts =
+                    newProductStrategy.recommend(userId, userProfile, newProductCount);
+            int addedNew = 0;
             for (RecommendationResultDTO np : newProducts) {
                 if (results.stream().noneMatch(r -> r.getProductId().equals(np.getProductId()))) {
                     results.add(np);
+                    addedNew++;
                     if (results.size() >= totalLimit) {
                         break;
                     }
                 }
             }
+            log.info("[智能推荐] 新品补充{}条，当前结果{}条", addedNew, results.size());
         }
 
-        // 如果数量不足，用热销商品补充
+        // 数量不足时用热销补充（兜底策略）
         if (results.size() < totalLimit) {
-            List<RecommendationResultDTO> hotProducts = hotProductStrategy.recommend(userId, userProfile, totalLimit);
+            log.info("[智能推荐] 结果不足{}条（当前{}条），热销兜底", totalLimit, results.size());
+            List<RecommendationResultDTO> hotProducts =
+                    hotProductStrategy.recommend(userId, userProfile, totalLimit);
+            int addedHot = 0;
             for (RecommendationResultDTO hot : hotProducts) {
                 if (results.stream().noneMatch(r -> r.getProductId().equals(hot.getProductId()))) {
                     results.add(hot);
+                    addedHot++;
                     if (results.size() >= totalLimit) {
                         break;
                     }
                 }
             }
+            log.info("[智能推荐] 热销兜底补充{}条", addedHot);
         }
 
+        log.info("[智能推荐] 用户{}最终返回{}条推荐", userId, results.size());
         return results;
+    }
+
+    /**
+     * 判断用户画像是否包含有效的注册信息（用于冷启动策略选择）
+     * <p>
+     * 有效注册信息：地域ID不为空 或 偏好作物列表不为空
+     * </p>
+     *
+     * @param userProfile 用户画像
+     * @return true=有注册信息，可走画像推荐；false=无信息，降级热销
+     */
+    private boolean hasProfileInfo(UserProfileDTO userProfile) {
+        boolean hasRegion = userProfile.getRegionId() != null;
+        boolean hasCrops = userProfile.getPreferredCropIds() != null
+                && !userProfile.getPreferredCropIds().isEmpty();
+        return hasRegion || hasCrops;
     }
 
     /**

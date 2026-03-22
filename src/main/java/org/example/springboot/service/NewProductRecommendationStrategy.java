@@ -229,9 +229,9 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
 
         double price = product.getPrice() != null ? product.getPrice().doubleValue() : 0.0;
         String priceRange;
-        if (price >= 300) {
+        if (price >= recommendationConfig.getHighPriceThreshold()) {
             priceRange = "HIGH";
-        } else if (price >= 100) {
+        } else if (price >= recommendationConfig.getMediumPriceThreshold()) {
             priceRange = "MEDIUM";
         } else {
             priceRange = "LOW";
@@ -241,12 +241,12 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
             return 1.0;
         } else if (("HIGH".equals(consumptionLevel) && "MEDIUM".equals(priceRange))
                 || ("MEDIUM".equals(consumptionLevel) && "LOW".equals(priceRange))) {
-            return 0.7;
+            return recommendationConfig.getPriceNearMatchScore();
         } else if (("LOW".equals(consumptionLevel) && "MEDIUM".equals(priceRange))
                 || ("MEDIUM".equals(consumptionLevel) && "HIGH".equals(priceRange))) {
-            return 0.3;
+            return recommendationConfig.getPriceFarMatchScore();
         } else {
-            return 0.1;
+            return recommendationConfig.getPriceNoMatchScore();
         }
     }
 
@@ -376,14 +376,15 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
                 .count();
 
         if (matchCount == 0) {
-            return 0.1; // 完全不匹配
+            return recommendationConfig.getCropNoMatchScore(); // 完全不匹配
         }
 
         // 匹配比例：交集 / 用户偏好作物数
         double matchRatio = (double) matchCount / userCrops.size();
 
-        // 匹配得分：基础分0.3 + 匹配比例 * 0.7
-        return 0.3 + matchRatio * 0.7;
+        // 匹配得分：基础分 + 匹配比例 × 乘数（由配置控制）
+        return recommendationConfig.getCropBaseScore()
+                + matchRatio * recommendationConfig.getCropMatchMultiplier();
     }
 
     /**
@@ -413,8 +414,29 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
 
     /**
      * 转换为推荐结果DTO
+     * <p>
+     * 使用批量查询分类，避免 N+1 问题。
+     * </p>
+     *
+     * @param scoredProducts 带得分的商品列表
+     * @return 推荐结果DTO列表
+     * @author IhaveBB
+     * @date 2026/03/22
      */
     private List<RecommendationResultDTO> convertToDTOs(List<ProductWithScore> scoredProducts) {
+        if (scoredProducts.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 批量查询分类（1次查询，避免N+1）
+        Set<Long> categoryIds = scoredProducts.stream()
+                .map(pws -> pws.getProduct().getCategoryId())
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, Category> categoryMap = categoryIds.isEmpty() ? Collections.emptyMap()
+                : categoryMapper.selectBatchIds(new ArrayList<>(categoryIds)).stream()
+                        .collect(Collectors.toMap(Category::getId, c -> c));
+
         List<RecommendationResultDTO> results = new ArrayList<>();
 
         for (ProductWithScore pws : scoredProducts) {
@@ -427,12 +449,9 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
             dto.setImageUrl(product.getImageUrl());
             dto.setCategoryId(product.getCategoryId());
 
-            // 获取分类名称
-            if (product.getCategoryId() != null) {
-                Category category = categoryMapper.selectById(product.getCategoryId());
-                if (category != null) {
-                    dto.setCategoryName(category.getName());
-                }
+            Category category = categoryMap.get(product.getCategoryId());
+            if (category != null) {
+                dto.setCategoryName(category.getName());
             }
 
             dto.setScore(pws.getScore());

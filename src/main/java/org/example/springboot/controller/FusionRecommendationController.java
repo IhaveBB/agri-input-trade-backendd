@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.springboot.annotation.RequiresRole;
 import org.example.springboot.common.Result;
 import org.example.springboot.entity.dto.RecommendationResultDTO;
 import org.example.springboot.entity.dto.UserProfileDTO;
@@ -65,6 +66,7 @@ public class FusionRecommendationController {
      * @return 推荐商品列表
      */
     @Operation(summary = "为指定用户获取推荐", description = "为指定用户 ID 生成推荐列表（管理员可用）")
+    @RequiresRole("ADMIN")
     @GetMapping("/user/{userId}")
     public Result<List<RecommendationResultDTO>> getRecommendationsForUser(@PathVariable Long userId) {
         log.info("[推荐接口] 为用户{}生成推荐", userId);
@@ -97,6 +99,7 @@ public class FusionRecommendationController {
      * @return 用户画像信息
      */
     @Operation(summary = "获取指定用户画像", description = "查看指定用户的画像信息（管理员可用）")
+    @RequiresRole("ADMIN")
     @GetMapping("/profile/user/{userId}")
     public Result<UserProfileDTO> getUserProfile(@PathVariable Long userId) {
         UserProfileDTO profile = recommendationService.getUserProfile(userId);
@@ -113,6 +116,7 @@ public class FusionRecommendationController {
      * @return 操作结果
      */
     @Operation(summary = "刷新所有用户推荐", description = "重新计算并更新所有用户的推荐结果")
+    @RequiresRole("ADMIN")
     @PostMapping("/refresh/all")
     public Result<Void> refreshAllRecommendations() {
         log.info("[推荐接口] 手动触发刷新所有用户推荐");
@@ -199,11 +203,13 @@ public class FusionRecommendationController {
     public Result<List<RecommendationResultDTO>> getSmartRecommendations(
             @RequestParam(defaultValue = "10") int limit) {
         Long userId = UserContext.getUserId();
-        boolean isNewUser = false;
+        boolean isNewUser;
 
-        // 判断是否是新用户（无历史行为）
-        if (userId != null) {
-            UserProfileDTO profile = recommendationService.getUserProfile(userId);
+        // 获取用户画像（一次查询复用）
+        UserProfileDTO profile = userId != null ? recommendationService.getUserProfile(userId) : null;
+
+        // 判断是否是新用户（无历史购买行为）
+        if (profile != null) {
             isNewUser = profile.getTotalPurchases() == null || profile.getTotalPurchases() == 0;
         } else {
             isNewUser = true;
@@ -211,7 +217,6 @@ public class FusionRecommendationController {
 
         log.info("[推荐接口] 用户{}请求智能推荐，是否新用户: {}", userId, isNewUser);
 
-        UserProfileDTO profile = userId != null ? recommendationService.getUserProfile(userId) : null;
         List<RecommendationResultDTO> recommendations = recommendationContext.smartRecommend(
                 userId, profile, isNewUser, limit);
 

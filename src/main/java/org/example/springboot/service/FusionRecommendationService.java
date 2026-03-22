@@ -211,13 +211,94 @@ public class FusionRecommendationService implements RecommendationStrategy {
             // 9. 记录曝光埋点
             recordExposureImpressions(userId, results);
 
-            log.info("[融合推荐] 为用户{}生成{}条推荐", userId, results.size());
+            if (!results.isEmpty()) {
+                RecommendationResultDTO top1 = results.get(0);
+                log.info("[融合推荐] 为用户{}生成{}条推荐，Top1：商品{}「{}」（CF={}, 画像={}, 综合={}）",
+                        userId, results.size(), top1.getProductId(), top1.getProductName(),
+                        String.format("%.3f", top1.getCfScore()),
+                        String.format("%.3f", top1.getProfileScore()),
+                        String.format("%.3f", top1.getScore()));
+            } else {
+                log.warn("[融合推荐] 为用户{}生成推荐结果为空，将触发降级", userId);
+            }
             return results;
 
         } catch (Exception e) {
             log.error("[融合推荐] 为用户{}生成推荐失败：{}", userId, e.getMessage(), e);
             // 降级策略：返回热销商品
             return getHotProducts(recommendationConfig.getTopN());
+        }
+    }
+
+    /**
+     * 基于用户注册画像的纯画像推荐（新用户冷启动专用）
+     * <p>
+     * 适用场景：用户有注册信息（地域、关注作物）但无任何交互历史。
+     * 跳过协同过滤环节（CF得分=0），仅通过画像匹配得分排序推荐商品：
+     * 地域约束 + 季节约束 + 品类偏好 + 价格区间 + 适用作物。
+     * 异常时降级为热销推荐。
+     * </p>
+     *
+     * @param userId      用户ID
+     * @param userProfile 用户画像（包含注册信息：地域、偏好作物）
+     * @param limit       推荐数量
+     * @return 推荐结果列表
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    public List<RecommendationResultDTO> recommendByProfileOnly(Long userId,
+                                                                 UserProfileDTO userProfile,
+                                                                 int limit) {
+        log.info("[画像冷启动] 用户{}有注册信息（地域: {}, 偏好作物: {}），开始纯画像推荐",
+                userId, userProfile.getRegionName(),
+                userProfile.getPreferredCropNames() != null
+                        ? String.join(",", userProfile.getPreferredCropNames()) : "无");
+
+        try {
+            String currentSeason = getCurrentSeason();
+            log.info("[画像冷启动] 当前季节: {}，开始遍历商品库计算画像匹配得分", currentSeason);
+
+            // 获取所有上架商品
+            LambdaQueryWrapper<Product> productWrapper = new LambdaQueryWrapper<>();
+            productWrapper.eq(Product::getStatus, 1);
+            List<Product> allProducts = productMapper.selectList(productWrapper);
+            log.info("[画像冷启动] 候选商品总数: {}", allProducts.size());
+
+            List<RecommendedItem> items = new ArrayList<>();
+            int filteredCount = 0;
+
+            for (Product product : allProducts) {
+                ProductProfileDTO productProfile = getProductProfile(product.getId());
+                double profileScore = computeProfileScore(userProfile, productProfile, currentSeason);
+
+                if (profileScore <= 0) {
+                    filteredCount++;
+                    continue; // 不满足地域或季节约束的商品直接跳过
+                }
+                // CF 得分为 0（无交互历史），直接以画像得分作为最终排序依据
+                items.add(new RecommendedItem(product.getId(), 0.0, profileScore, profileScore));
+            }
+
+            // 排序并截取 Top-N
+            List<RecommendedItem> topN = items.stream()
+                    .sorted(Comparator.comparing(RecommendedItem::getFinalScore).reversed())
+                    .limit(limit)
+                    .collect(Collectors.toList());
+
+            List<RecommendationResultDTO> results = convertToDTOs(topN);
+
+            // 记录曝光埋点
+            recordExposureImpressions(userId, results);
+
+            log.info("[画像冷启动] 为用户{}生成{}条画像推荐（画像匹配: {}/{}，约束过滤: {}个）",
+                    userId, results.size(), items.size(), allProducts.size(), filteredCount);
+
+            return results;
+
+        } catch (Exception e) {
+            log.error("[画像冷启动] 为用户{}生成画像推荐失败: {}，降级为热销推荐",
+                    userId, e.getMessage(), e);
+            return getHotProducts(limit);
         }
     }
 
@@ -285,6 +366,29 @@ public class FusionRecommendationService implements RecommendationStrategy {
         return productProfileCache.computeIfAbsent(productId, this::buildProductProfile);
     }
 
+    /**
+     * 检查指定商品是否在当前用户的推荐列表中
+     * <p>
+     * 用于埋点归因：判断用户行为是来源于推荐列表还是自然浏览。
+     * </p>
+     *
+     * @param userId    用户ID
+     * @param productId 商品ID
+     * @return true=该商品在用户的推荐列表中，false=不在推荐列表中
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    public boolean isProductRecommended(Long userId, Long productId) {
+        if (userId == null || productId == null) {
+            return false;
+        }
+        List<RecommendedItem> recommendedItems = recommendationCache.get(userId);
+        if (recommendedItems == null || recommendedItems.isEmpty()) {
+            return false;
+        }
+        return recommendedItems.stream().anyMatch(item -> item.getProductId().equals(productId));
+    }
+
     // ==================== 核心算法实现 ====================
 
     /**
@@ -296,7 +400,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
      * </p>
      */
     private void refreshInteractionMatrix() {
-        log.info("[交互矩阵] 开始构建用户 - 商品交互矩阵");
+        log.info("[交互矩阵] 开始构建用户-商品交互矩阵（整合浏览/收藏/加购/购买/评分 5 类行为）...");
 
         userInteractionMatrix.clear();
         // 交互矩阵重建后相似度矩阵必须同步清空，确保重新计算
@@ -306,58 +410,66 @@ public class FusionRecommendationService implements RecommendationStrategy {
         LambdaQueryWrapper<Order> orderWrapper = new LambdaQueryWrapper<>();
         orderWrapper.eq(Order::getStatus, 3); // 已完成订单
         List<Order> orders = orderMapper.selectList(orderWrapper);
-
+        int purchaseCount = 0;
         for (Order order : orders) {
             if (order.getUserId() == null || order.getProductId() == null) {
                 continue;
             }
             addToInteraction(order.getUserId(), order.getProductId(),
                     recommendationConfig.getPurchaseWeight());
+            purchaseCount++;
         }
+        log.info("[交互矩阵] 购买行为: {}条（权重={}）", purchaseCount, recommendationConfig.getPurchaseWeight());
 
         // 2. 加载收藏行为
         LambdaQueryWrapper<Favorite> favoriteWrapper = new LambdaQueryWrapper<>();
         favoriteWrapper.eq(Favorite::getStatus, 1); // 有效收藏
         List<Favorite> favorites = favoriteMapper.selectList(favoriteWrapper);
-
+        int favoriteCount = 0;
         for (Favorite favorite : favorites) {
             if (favorite.getUserId() == null || favorite.getProductId() == null) {
                 continue;
             }
             addToInteraction(favorite.getUserId(), favorite.getProductId(),
                     recommendationConfig.getFavoriteWeight());
+            favoriteCount++;
         }
+        log.info("[交互矩阵] 收藏行为: {}条（权重={}）", favoriteCount, recommendationConfig.getFavoriteWeight());
 
         // 3. 加载购物车行为
         LambdaQueryWrapper<Cart> cartWrapper = new LambdaQueryWrapper<>();
         List<Cart> carts = cartMapper.selectList(cartWrapper);
-
+        int cartCount = 0;
         for (Cart cart : carts) {
             if (cart.getUserId() == null || cart.getProductId() == null) {
                 continue;
             }
             addToInteraction(cart.getUserId(), cart.getProductId(),
                     recommendationConfig.getCartWeight());
+            cartCount++;
         }
+        log.info("[交互矩阵] 加购行为: {}条（权重={}）", cartCount, recommendationConfig.getCartWeight());
 
         // 4. 加载浏览（点击）行为（来自推荐埋点记录）
         LambdaQueryWrapper<RecommendAction> clickWrapper = new LambdaQueryWrapper<>();
         clickWrapper.eq(RecommendAction::getActionType, "CLICK");
         List<RecommendAction> clicks = recommendActionMapper.selectList(clickWrapper);
-
+        int clickCount = 0;
         for (RecommendAction click : clicks) {
             if (click.getUserId() == null || click.getProductId() == null) {
                 continue;
             }
             addToInteraction(click.getUserId(), click.getProductId(),
                     recommendationConfig.getClickWeight());
+            clickCount++;
         }
+        log.info("[交互矩阵] 浏览行为: {}条（权重={}）", clickCount, recommendationConfig.getClickWeight());
 
         // 5. 加载评分行为（以评分值作为交互强度，高分正向信号更强）
         LambdaQueryWrapper<Review> reviewWrapper = new LambdaQueryWrapper<>();
         reviewWrapper.isNotNull(Review::getRating).eq(Review::getStatus, 1);
         List<Review> reviews = reviewMapper.selectList(reviewWrapper);
-
+        int reviewCount = 0;
         for (Review review : reviews) {
             if (review.getUserId() == null || review.getProductId() == null
                     || review.getRating() == null || review.getRating() <= 0) {
@@ -366,18 +478,26 @@ public class FusionRecommendationService implements RecommendationStrategy {
             // 实际权重 = rating(1-5) × reviewWeight，高分贡献更强
             addToInteraction(review.getUserId(), review.getProductId(),
                     review.getRating() * recommendationConfig.getReviewWeight());
+            reviewCount++;
         }
+        log.info("[交互矩阵] 评分行为: {}条（权重基数={}，实际权重=rating×基数）",
+                reviewCount, recommendationConfig.getReviewWeight());
 
-        log.info("[交互矩阵] 构建完成，共{}个用户（已整合浏览/收藏/加购/购买/评分5类行为）",
-                userInteractionMatrix.size());
+        int totalActions = purchaseCount + favoriteCount + cartCount + clickCount + reviewCount;
+        log.info("[交互矩阵] 构建完成：共{}个用户有交互数据，行为记录总计{}条",
+                userInteractionMatrix.size(), totalActions);
     }
 
     /**
      * 添加交互强度到矩阵
+     *
+     * @param userId    用户ID
+     * @param productId 商品ID
+     * @param weight    交互权重（支持小数，用于评分行为：rating × reviewWeight）
      */
-    private void addToInteraction(Long userId, Long productId, int weight) {
+    private void addToInteraction(Long userId, Long productId, double weight) {
         userInteractionMatrix.computeIfAbsent(userId, k -> new HashMap<>())
-                .merge(productId, (double) weight, Double::sum);
+                .merge(productId, weight, Double::sum);
     }
 
     /**
@@ -396,26 +516,36 @@ public class FusionRecommendationService implements RecommendationStrategy {
 
     /**
      * 计算物品相似度矩阵
+     * <p>
+     * 使用余弦相似度公式：
+     * sim(i,j) = Σ(r(u,i) * r(u,j)) / (||r(·,i)|| × ||r(·,j)||)
+     * <br/>
+     * BUG FIX：先双向收集所有相似度到临时 Map，再统一对每个商品做 TopK，
+     * 保证对称矩阵两个方向的相似商品列表均受 TopK 约束。
+     * </p>
      */
     private void computeItemSimilarity() {
-        log.info("[物品相似度] 开始计算物品相似度矩阵");
+        log.info("[物品相似度] 开始计算物品相似度矩阵，当前交互用户数: {}", userInteractionMatrix.size());
 
         itemSimilarityMatrix.clear();
 
-        // 1. 获取所有商品 ID
+        // 1. 获取所有有交互记录的商品 ID
         Set<Long> allProductIds = new HashSet<>();
         for (Map<Long, Double> userInteractions : userInteractionMatrix.values()) {
             allProductIds.addAll(userInteractions.keySet());
         }
 
         if (allProductIds.isEmpty()) {
-            log.warn("[物品相似度] 没有交互数据，无法计算相似度");
+            log.warn("[物品相似度] 没有交互数据，无法计算相似度矩阵");
             return;
         }
 
         List<Long> productIds = new ArrayList<>(allProductIds);
+        int totalProducts = productIds.size();
+        long totalPairs = (long) totalProducts * (totalProducts - 1) / 2;
+        log.info("[物品相似度] 参与计算商品数: {}，预计商品对数: {}", totalProducts, totalPairs);
 
-        // 2. 计算每个商品的模长（分母的一部分）
+        // 2. 预计算每个商品的模长（向量范数）
         Map<Long, Double> productNorms = new HashMap<>();
         for (Long productId : productIds) {
             double sumSq = 0.0;
@@ -428,42 +558,49 @@ public class FusionRecommendationService implements RecommendationStrategy {
             productNorms.put(productId, Math.sqrt(sumSq));
         }
 
-        // 3. 计算两两物品的余弦相似度
+        // 3. 计算两两物品的余弦相似度，双向收集到临时 Map
+        // 不在此处直接写最终矩阵，避免 TopK 对称方向不一致的问题
+        Map<Long, Map<Long, Double>> rawSimilarities = new HashMap<>();
+        int validPairCount = 0;
+
         for (int i = 0; i < productIds.size(); i++) {
             Long productId1 = productIds.get(i);
-            Map<Long, Double> similarities = new HashMap<>();
 
             for (int j = i + 1; j < productIds.size(); j++) {
                 Long productId2 = productIds.get(j);
 
-                double similarity = computeCosineSimilarity(
-                        productId1, productId2, productNorms);
+                double similarity = computeCosineSimilarity(productId1, productId2, productNorms);
 
-                // 应用稀疏性优化：阈值过滤
+                // 阈值过滤，低于阈值的相似度视为不相似
                 if (similarity >= recommendationConfig.getSimilarityThreshold()) {
-                    similarities.put(productId2, similarity);
-                    // 对称矩阵
-                    itemSimilarityMatrix.computeIfAbsent(productId2, k -> new HashMap<>())
+                    validPairCount++;
+                    // 双向收集（两个方向均记录，等待后续统一 TopK）
+                    rawSimilarities.computeIfAbsent(productId1, k -> new HashMap<>())
+                            .put(productId2, similarity);
+                    rawSimilarities.computeIfAbsent(productId2, k -> new HashMap<>())
                             .put(productId1, similarity);
                 }
             }
-
-            // 4. 保留 Top-K 相似物品
-            if (!similarities.isEmpty()) {
-                Map<Long, Double> topK = similarities.entrySet().stream()
-                        .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
-                        .limit(recommendationConfig.getTopK())
-                        .collect(Collectors.toMap(
-                                Map.Entry::getKey,
-                                Map.Entry::getValue,
-                                (v1, v2) -> v1,
-                                LinkedHashMap::new
-                        ));
-                itemSimilarityMatrix.put(productId1, topK);
-            }
         }
 
-        log.info("[物品相似度] 计算完成，共{}个商品有相似度数据", itemSimilarityMatrix.size());
+        // 4. 对每个商品统一应用 TopK，保证两个方向均受约束
+        int topK = recommendationConfig.getTopK();
+        for (Map.Entry<Long, Map<Long, Double>> entry : rawSimilarities.entrySet()) {
+            Map<Long, Double> topKSimilarities = entry.getValue().entrySet().stream()
+                    .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
+                    .limit(topK)
+                    .collect(Collectors.toMap(
+                            Map.Entry::getKey,
+                            Map.Entry::getValue,
+                            (v1, v2) -> v1,
+                            LinkedHashMap::new
+                    ));
+            itemSimilarityMatrix.put(entry.getKey(), topKSimilarities);
+        }
+
+        log.info("[物品相似度] 计算完成：有效相似对数={}（阈值>={}），有相似度商品数={}，TopK={}",
+                validPairCount, recommendationConfig.getSimilarityThreshold(),
+                itemSimilarityMatrix.size(), topK);
     }
 
     /**
@@ -585,11 +722,11 @@ public class FusionRecommendationService implements RecommendationStrategy {
         profile.setAvgOrderAmount(avgAmount);
         profile.setTotalPurchases(orders.size());
 
-        // 3. 根据平均订单金额划分消费能力
-        if (avgAmount >= 500) {
+        // 3. 根据平均订单金额划分消费能力（阈值可通过配置文件调整）
+        if (avgAmount >= recommendationConfig.getHighConsumptionThreshold()) {
             profile.setConsumptionLevel("HIGH");
             profile.setPriceSensitivity("LOW");
-        } else if (avgAmount >= 200) {
+        } else if (avgAmount >= recommendationConfig.getMediumConsumptionThreshold()) {
             profile.setConsumptionLevel("MEDIUM");
             profile.setPriceSensitivity("MEDIUM");
         } else {
@@ -742,18 +879,18 @@ public class FusionRecommendationService implements RecommendationStrategy {
             }
         }
 
-        // 3. 判断价格区间
+        // 3. 判断价格区间（阈值可通过配置文件调整）
         Double price = profile.getPrice();
-        if (price >= 300) {
+        if (price >= recommendationConfig.getHighPriceThreshold()) {
             profile.setPriceRange("HIGH");
-        } else if (price >= 100) {
+        } else if (price >= recommendationConfig.getMediumPriceThreshold()) {
             profile.setPriceRange("MEDIUM");
         } else {
             profile.setPriceRange("LOW");
         }
 
-        // 4. 判断是否热销
-        profile.setIsHot(profile.getSalesCount() >= 100);
+        // 4. 判断是否热销（阈值可通过配置文件调整）
+        profile.setIsHot(profile.getSalesCount() >= recommendationConfig.getHotSalesThreshold());
 
         // 5. 加载适用地区和季节
         loadProductRegionsAndSeasons(productId, profile);
@@ -870,48 +1007,53 @@ public class FusionRecommendationService implements RecommendationStrategy {
         productWrapper.eq(Product::getStatus, 1); // 只考虑上架商品
         List<Product> allProducts = productMapper.selectList(productWrapper);
 
-        // 3. 收集所有 CF 预测所需的数据
+        // 3. 对每个未交互商品计算 CF 得分
         Map<Long, Double> cfScores = new HashMap<>();
-        Map<Long, Double> cfNumerators = new HashMap<>();
-        Map<Long, Double> cfDenominators = new HashMap<>();
-
-        // 4. 对每个未交互商品计算 CF 得分
+        int skippedInteracted = 0;
         for (Product product : allProducts) {
             if (interactedProducts.contains(product.getId())) {
-                continue; // 跳过已交互商品
+                skippedInteracted++;
+                continue; // 跳过已交互商品（已购买/收藏等，无需重复推荐）
             }
-
             double cfScore = computeCFScore(product.getId(), userInteractions);
             cfScores.put(product.getId(), cfScore);
         }
+        log.info("[推荐评分] 用户{}：候选商品{}个（已交互{}个已排除），开始计算CF得分",
+                userId, allProducts.size(), skippedInteracted);
 
-        // 5. CF 得分归一化（Min-Max）
+        // 4. CF 得分归一化（Min-Max）
         Map<Long, Double> normalizedCfScores = normalizeScores(cfScores);
 
-        // 6. 获取当前季节
+        // 5. 获取当前季节
         String currentSeason = getCurrentSeason();
+        log.info("[推荐评分] 当前季节：{}，季节/地域约束已启用：季节={}, 地域={}",
+                currentSeason,
+                recommendationConfig.getEnableSeasonConstraint(),
+                recommendationConfig.getEnableRegionConstraint());
 
-        // 7. 对每个商品计算最终得分
+        // 6. 对每个商品计算最终得分（CF + 画像融合）
+        double theta = recommendationConfig.getTheta();
+        int filteredByProfile = 0;
         for (Product product : allProducts) {
             if (interactedProducts.contains(product.getId())) {
                 continue;
             }
 
-            // 获取商品画像
             ProductProfileDTO productProfile = getProductProfile(product.getId());
-
-            // 计算 CF 得分
             Double cfScore = normalizedCfScores.getOrDefault(product.getId(), 0.0);
-
-            // 计算画像匹配得分
             Double profileScore = computeProfileScore(userProfile, productProfile, currentSeason);
 
-            // 线性融合
-            double theta = recommendationConfig.getTheta();
-            double finalScore = theta * cfScore + (1 - theta) * profileScore;
+            if (profileScore == 0.0) {
+                filteredByProfile++;
+            }
 
+            // 线性融合：finalScore = θ × CF得分 + (1-θ) × 画像得分
+            double finalScore = theta * cfScore + (1 - theta) * profileScore;
             items.add(new RecommendedItem(product.getId(), cfScore, profileScore, finalScore));
         }
+
+        log.info("[推荐评分] 评分完成：有效得分商品{}个，画像约束过滤{}个（theta={}）",
+                items.size(), filteredByProfile, theta);
 
         return items;
     }
@@ -969,9 +1111,9 @@ public class FusionRecommendationService implements RecommendationStrategy {
         double range = maxScore - minScore;
 
         if (range == 0) {
-            // 所有得分相同，全部设为 0.5
+            // 所有CF得分相同（通常全为0，冷启动场景），统一置0避免虚假信号
             for (Long productId : scores.keySet()) {
-                normalized.put(productId, 0.5);
+                normalized.put(productId, 0.0);
             }
         } else {
             for (Map.Entry<Long, Double> entry : scores.entrySet()) {
@@ -1024,12 +1166,14 @@ public class FusionRecommendationService implements RecommendationStrategy {
         // 季节约束
         if (recommendationConfig.getEnableSeasonConstraint()) {
             if (!productProfile.getSeasonIds().isEmpty()) {
-                // 商品有季节限制
+                // 商品有季节限制，检查是否匹配当前季节或适用全年
+                // BUG FIX："全年"商品应在任何季节均可推荐，不能被过滤
                 boolean seasonMatch = productProfile.getSeasonNames().stream()
-                        .anyMatch(s -> s.contains(currentSeason));
+                        .anyMatch(s -> "全年".equals(s) || s.contains(currentSeason));
                 if (!seasonMatch) {
-                    log.debug("[业务规则] 商品{}不适配当前季节{}",
-                            productProfile.getProductId(), currentSeason);
+                    log.debug("[业务规则] 商品{}不适配当前季节{}（适用季节：{}）",
+                            productProfile.getProductId(), currentSeason,
+                            productProfile.getSeasonNames());
                     return false;
                 }
             }
@@ -1064,28 +1208,36 @@ public class FusionRecommendationService implements RecommendationStrategy {
             categoryScore = 0.5;
         }
 
-        // 2. 价格区间匹配
-        double priceScore = 0.0;
+        // 2. 价格区间匹配（匹配分数由配置控制）
+        double priceScore = 0.5; // 默认中性得分（无法判断消费能力时）
         String consumptionLevel = userProfile.getConsumptionLevel();
         String priceRange = productProfile.getPriceRange();
 
-        if (consumptionLevel.equals(priceRange)) {
+        if (consumptionLevel == null || priceRange == null) {
+            // 无消费能力或价格区间信息，使用中性得分
+            priceScore = 0.5;
+        } else if (consumptionLevel.equals(priceRange)) {
             priceScore = 1.0;
         } else if (("HIGH".equals(consumptionLevel) && "MEDIUM".equals(priceRange))
                 || ("MEDIUM".equals(consumptionLevel) && "LOW".equals(priceRange))) {
-            priceScore = 0.7;
+            // 邻档匹配（消费力高于商品价位一档，可以接受）
+            priceScore = recommendationConfig.getPriceNearMatchScore();
         } else if (("LOW".equals(consumptionLevel) && "MEDIUM".equals(priceRange))
                 || ("MEDIUM".equals(consumptionLevel) && "HIGH".equals(priceRange))) {
-            priceScore = 0.3;
+            // 跨档匹配（商品价位高于消费力，推荐意义较低）
+            priceScore = recommendationConfig.getPriceFarMatchScore();
         } else {
-            priceScore = 0.1;
+            // 极端不匹配（HIGH 用户 → LOW 商品，或 LOW 用户 → HIGH 商品）
+            priceScore = recommendationConfig.getPriceNoMatchScore();
         }
 
-        // 3. 适用作物匹配（农资电商特有）
+        // 3. 适用作物匹配（农资电商特有维度）
         double cropScore = computeCropMatchScore(userProfile, productProfile);
 
-        // 4. 加权平均：品类40% + 价格30% + 作物30%
-        return 0.4 * categoryScore + 0.3 * priceScore + 0.3 * cropScore;
+        // 4. 加权融合（三维权重均可通过配置调整）
+        return recommendationConfig.getCategoryWeight() * categoryScore
+                + recommendationConfig.getPriceWeight() * priceScore
+                + recommendationConfig.getCropWeight() * cropScore;
     }
 
     /**
@@ -1113,27 +1265,33 @@ public class FusionRecommendationService implements RecommendationStrategy {
                 .count();
 
         if (matchCount == 0) {
-            return 0.1; // 完全不匹配，低分但不完全排除
+            return recommendationConfig.getCropNoMatchScore(); // 完全不匹配，低分但不完全排除
         }
 
         // 匹配比例：交集 / 用户偏好作物数
         double matchRatio = (double) matchCount / userCrops.size();
 
-        // 匹配得分：基础分0.3 + 匹配比例 * 0.7
-        return 0.3 + matchRatio * 0.7;
+        // 匹配得分：基础分 + 匹配比例 × 乘数（公式系数均可配置）
+        return recommendationConfig.getCropBaseScore()
+                + matchRatio * recommendationConfig.getCropMatchMultiplier();
     }
 
     /**
-     * 获取当前季节
+     * 获取当前季节名称
+     * <p>
+     * BUG FIX：统一返回"春季"格式，与数据库 Season 表存储格式及 NewProductRecommendationStrategy 保持一致
+     * </p>
+     *
+     * @return 季节名称（春季/夏季/秋季/冬季）
      */
     private String getCurrentSeason() {
         Month month = LocalDate.now().getMonth();
         return switch (month) {
-            case MARCH, APRIL, MAY -> "春";
-            case JUNE, JULY, AUGUST -> "夏";
-            case SEPTEMBER, OCTOBER, NOVEMBER -> "秋";
-            case DECEMBER, JANUARY, FEBRUARY -> "冬";
-            default -> "春";
+            case MARCH, APRIL, MAY -> "春季";
+            case JUNE, JULY, AUGUST -> "夏季";
+            case SEPTEMBER, OCTOBER, NOVEMBER -> "秋季";
+            case DECEMBER, JANUARY, FEBRUARY -> "冬季";
+            default -> "春季";
         };
     }
 
@@ -1184,34 +1342,34 @@ public class FusionRecommendationService implements RecommendationStrategy {
      * 生成推荐原因
      */
     private String generateRecommendationReason(RecommendedItem item, Product product) {
-        StringBuilder reason = new StringBuilder();
+        double highThreshold = recommendationConfig.getCfHighScoreThreshold();
+        double midThreshold = recommendationConfig.getCfMediumScoreThreshold();
 
-        if (item.getCfScore() > 0.7) {
-            reason.append("与您浏览/购买的商品相似");
-        } else if (item.getProfileScore() > 0.7) {
-            reason.append("符合您的偏好");
-        } else if (item.getProfileScore() > 0.5) {
-            reason.append("您可能感兴趣");
+        if (item.getCfScore() > highThreshold) {
+            return "与您浏览/购买的商品相似";
+        } else if (item.getProfileScore() > highThreshold) {
+            return "符合您的地域和作物偏好";
+        } else if (item.getProfileScore() > midThreshold) {
+            return "您可能感兴趣";
         } else {
-            reason.append("热门推荐");
+            return "热门推荐";
         }
-
-        return reason.toString();
     }
 
     /**
      * 生成匹配标签
      */
     private List<String> generateMatchTags(RecommendedItem item) {
+        double highThreshold = recommendationConfig.getCfHighScoreThreshold();
+        double midThreshold = recommendationConfig.getCfMediumScoreThreshold();
         List<String> tags = new ArrayList<>();
 
-        if (item.getCfScore() > 0.5) {
+        if (item.getCfScore() > midThreshold) {
             tags.add("相似商品");
         }
-        if (item.getProfileScore() > 0.7) {
+        if (item.getProfileScore() > highThreshold) {
             tags.add("偏好匹配");
-        }
-        if (item.getProfileScore() > 0.5 && item.getProfileScore() <= 0.7) {
+        } else if (item.getProfileScore() > midThreshold) {
             tags.add("可能适合");
         }
 

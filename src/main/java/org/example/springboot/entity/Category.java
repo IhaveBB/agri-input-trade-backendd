@@ -1,5 +1,6 @@
 package org.example.springboot.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -43,6 +44,13 @@ public class Category {
 
     @Schema(description = "创建用户ID")
     private Long createUserId;
+
+    @Schema(description = "审核状态（仅自定义分类有效）：0-待审核, 1-已通过, 2-已拒绝")
+    private Integer auditStatus;
+
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    @Schema(description = "审核备注（管理员拒绝时填写原因）")
+    private String auditRemark;
 
     @Schema(description = "创建时间")
     private Timestamp createdAt;

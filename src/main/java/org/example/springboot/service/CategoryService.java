@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.example.springboot.entity.Category;
 import org.example.springboot.entity.Product;
+import org.example.springboot.entity.dto.CategoryAuditDTO;
 import org.example.springboot.entity.dto.CategoryCreateDTO;
 import org.example.springboot.entity.dto.CategoryUpdateDTO;
 import org.example.springboot.enums.ErrorCodeEnum;
@@ -43,6 +44,7 @@ public class CategoryService {
     /**
      * 商家申请新增自定义分类（使用 DTO）
      */
+    @Transactional
     public Category applyCustomCategory(CategoryCreateDTO dto, Long userId) {
         // 商家自定义分类的限制
         if (dto.getParentId() == null || dto.getParentId() <= 0) {
@@ -76,20 +78,23 @@ public class CategoryService {
             throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "分类名称与现有分类相似，请使用其他名称");
         }
 
-        // 构建分类实体
+        // 构建分类实体（待审核状态，未通过前不在分类树中展示）
         Category category = new Category();
         BeanUtils.copyProperties(dto, category);
         category.setLevel(parent.getLevel() + 1);
         if (category.getSortOrder() == null) {
             category.setSortOrder(0);
         }
-        category.setStatus(1);
+        category.setStatus(0);       // 禁用：审核通过前不可见
         category.setIsCustom(1);
+        category.setAuditStatus(0);  // 待审核
+        category.setAuditRemark(null);
         category.setCreateUserId(userId);
 
         int result = categoryMapper.insert(category);
         if (result > 0) {
-            LOGGER.info("商家申请新增分类成功，分类ID：{}，申请人ID：{}", category.getId(), userId);
+            LOGGER.info("[分类申请] 商家(userId={})提交自定义分类申请，分类名称：{}，待管理员审核",
+                    userId, category.getName());
             return category;
         }
         throw new BusinessException(ErrorCodeEnum.ERROR, "申请新增分类失败");
@@ -433,6 +438,112 @@ public class CategoryService {
         }
 
         return rootCategories;
+    }
+
+    /**
+     * 管理员审核商家自定义分类申请
+     * <p>
+     * 审核通过：status=1（启用），auditStatus=1
+     * 审核拒绝：status=0（禁用），auditStatus=2，写入拒绝原因
+     * </p>
+     *
+     * @param categoryId 待审核的分类ID
+     * @param dto        审核请求（1=通过，2=拒绝 + 拒绝原因）
+     * @param adminId    操作管理员ID
+     * @return 审核后的分类信息
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    @Transactional
+    public Category auditCategoryApplication(Long categoryId, CategoryAuditDTO dto, Long adminId) {
+        // 1. 查分类
+        Category category = categoryMapper.selectById(categoryId);
+        if (category == null) {
+            throw new BusinessException(ErrorCodeEnum.CATEGORY_NOT_FOUND, "分类不存在");
+        }
+
+        // 2. 只能审核商家自定义分类
+        if (category.getIsCustom() == null || category.getIsCustom() != 1) {
+            throw new BusinessException(ErrorCodeEnum.CATEGORY_AUDIT_STATUS_ERROR, "系统预置分类不支持审核操作");
+        }
+
+        // 3. 只能审核待审核状态的分类
+        if (category.getAuditStatus() == null || category.getAuditStatus() != 0) {
+            throw new BusinessException(ErrorCodeEnum.CATEGORY_ALREADY_AUDITED, "该分类已审核，不可重复操作");
+        }
+
+        // 4. 拒绝时必须填写原因
+        if (dto.getAuditStatus() == 2
+                && (dto.getAuditRemark() == null || dto.getAuditRemark().trim().isEmpty())) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "拒绝时必须填写拒绝原因");
+        }
+
+        // 5. 执行审核
+        Category update = new Category();
+        update.setId(categoryId);
+        if (dto.getAuditStatus() == 1) {
+            // 审核通过：启用分类
+            update.setStatus(1);
+            update.setAuditStatus(1);
+            update.setAuditRemark(null);
+            LOGGER.info("[分类审核] 管理员(adminId={})审核通过分类：{}（id={}）",
+                    adminId, category.getName(), categoryId);
+        } else if (dto.getAuditStatus() == 2) {
+            // 审核拒绝：保持禁用
+            update.setStatus(0);
+            update.setAuditStatus(2);
+            update.setAuditRemark(dto.getAuditRemark());
+            LOGGER.info("[分类审核] 管理员(adminId={})拒绝分类申请：{}（id={}），原因：{}",
+                    adminId, category.getName(), categoryId, dto.getAuditRemark());
+        } else {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "审核状态值无效，1=通过，2=拒绝");
+        }
+
+        categoryMapper.updateById(update);
+        return categoryMapper.selectById(categoryId);
+    }
+
+    /**
+     * 管理员查询所有自定义分类申请列表（分页）
+     *
+     * @param auditStatus 审核状态过滤（null=全部，0=待审核，1=已通过，2=已拒绝）
+     * @param currentPage 当前页
+     * @param size        每页大小
+     * @return 分页结果
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    public Page<Category> getCustomCategoryApplications(Integer auditStatus,
+                                                        Integer currentPage, Integer size) {
+        LambdaQueryWrapper<Category> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Category::getIsCustom, 1);
+        if (auditStatus != null) {
+            wrapper.eq(Category::getAuditStatus, auditStatus);
+        }
+        wrapper.orderByDesc(Category::getCreatedAt);
+
+        Page<Category> page = new Page<>(currentPage, size);
+        return categoryMapper.selectPage(page, wrapper);
+    }
+
+    /**
+     * 商家查询自己的分类申请列表（分页）
+     *
+     * @param userId      商家用户ID
+     * @param currentPage 当前页
+     * @param size        每页大小
+     * @return 分页结果
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    public Page<Category> getMyApplications(Long userId, Integer currentPage, Integer size) {
+        LambdaQueryWrapper<Category> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Category::getIsCustom, 1)
+                .eq(Category::getCreateUserId, userId)
+                .orderByDesc(Category::getCreatedAt);
+
+        Page<Category> page = new Page<>(currentPage, size);
+        return categoryMapper.selectPage(page, wrapper);
     }
 
     /**

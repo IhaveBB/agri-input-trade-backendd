@@ -201,7 +201,17 @@ public enum ErrorCodeEnum {
     /**
      * 权限不足（细粒度鉴权，与 FORBIDDEN 区分使用）
      */
-    PERMISSION_DENIED("PERM_DENIED", "权限不足");
+    PERMISSION_DENIED("PERM_DENIED", "权限不足"),
+
+    /**
+     * 分类审核状态错误（如对非自定义分类进行审核操作）
+     */
+    CATEGORY_AUDIT_STATUS_ERROR("CA002", "分类审核状态错误"),
+
+    /**
+     * 分类已审核，不可重复操作
+     */
+    CATEGORY_ALREADY_AUDITED("CA003", "该分类已审核，不可重复操作");
 
     private final String code;
     private final String message;

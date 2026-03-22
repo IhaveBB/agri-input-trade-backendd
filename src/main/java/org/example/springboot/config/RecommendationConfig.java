@@ -131,4 +131,96 @@ public class RecommendationConfig {
      * 新品推荐数量
      */
     private Integer newProductRecommendCount = 8;
+
+    // ==================== 消费能力分档阈值 ====================
+
+    /**
+     * 高消费判定阈值（avgAmount >= 该值 → HIGH）
+     */
+    private Integer highConsumptionThreshold = 500;
+
+    /**
+     * 中消费判定阈值（avgAmount >= 该值 → MEDIUM）
+     */
+    private Integer mediumConsumptionThreshold = 200;
+
+    // ==================== 价格区间分档阈值 ====================
+
+    /**
+     * 高价格区间阈值（price >= 该值 → HIGH）
+     */
+    private Integer highPriceThreshold = 300;
+
+    /**
+     * 中价格区间阈值（price >= 该值 → MEDIUM）
+     */
+    private Integer mediumPriceThreshold = 100;
+
+    /**
+     * 热销商品销量阈值（salesCount >= 该值 → isHot=true）
+     */
+    private Integer hotSalesThreshold = 100;
+
+    // ==================== 画像匹配维度权重 ====================
+
+    /**
+     * 品类偏好匹配权重（0-1，三维权重合计需为1.0）
+     */
+    private Double categoryWeight = 0.4;
+
+    /**
+     * 价格区间匹配权重
+     */
+    private Double priceWeight = 0.3;
+
+    /**
+     * 适用作物匹配权重（农资电商特有维度）
+     */
+    private Double cropWeight = 0.3;
+
+    // ==================== 价格匹配分数 ====================
+
+    /**
+     * 价格邻档匹配得分（HIGH→MEDIUM 或 MEDIUM→LOW 视为近似匹配）
+     */
+    private Double priceNearMatchScore = 0.7;
+
+    /**
+     * 价格跨档匹配得分（LOW→MEDIUM 或 MEDIUM→HIGH）
+     */
+    private Double priceFarMatchScore = 0.3;
+
+    /**
+     * 价格极端不匹配得分（HIGH→LOW 或 LOW→HIGH）
+     */
+    private Double priceNoMatchScore = 0.1;
+
+    // ==================== 作物匹配分数 ====================
+
+    /**
+     * 作物完全不匹配时的得分
+     */
+    private Double cropNoMatchScore = 0.1;
+
+    /**
+     * 作物匹配公式基础分（finalCropScore = cropBaseScore + matchRatio * cropMatchMultiplier）
+     */
+    private Double cropBaseScore = 0.3;
+
+    /**
+     * 作物匹配比例乘数
+     */
+    private Double cropMatchMultiplier = 0.7;
+
+    // ==================== 推荐文案生成阈值 ====================
+
+    /**
+     * CF/画像得分的高分阈值（>= 该值生成强推荐文案）
+     */
+    private Double cfHighScoreThreshold = 0.7;
+
+    /**
+     * CF/画像得分的中分阈值（>= 该值生成普通推荐文案）
+     */
+    private Double cfMediumScoreThreshold = 0.5;
 }
