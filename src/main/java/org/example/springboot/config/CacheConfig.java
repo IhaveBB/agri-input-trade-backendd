@@ -7,6 +7,7 @@ import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.security.SecureRandom;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -33,5 +34,18 @@ public class CacheConfig {
         CaffeineCacheManager cacheManager = new CaffeineCacheManager();
         cacheManager.setCaffeine(caffeine);
         return cacheManager;
+    }
+
+    /**
+     * 安全随机数生成器
+     * 用于生成验证码等安全敏感场景
+     *
+     * @return SecureRandom 实例
+     * @author IhaveBB
+     * @date 2026/03/22
+     */
+    @Bean
+    public SecureRandom secureRandom() {
+        return new SecureRandom();
     }
 }

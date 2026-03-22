@@ -144,7 +144,7 @@ public class UserController {
      * @param newPassword 新密码
      * @return 操作结果
      * @author IhaveBB
-     * @date 2026/03/19
+     * @date 2026/03/22
      */
     @Operation(summary = "忘记密码")
     @PostMapping("/forget")
@@ -153,8 +153,8 @@ public class UserController {
             @RequestParam String code,
             @RequestParam String newPassword) {
 
-        // 验证验证码
-        if (!emailService.verifyCode(email, code)) {
+        // 验证找回密码验证码
+        if (!emailService.verifyResetCode(email, code)) {
             throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "验证码错误或已过期");
         }
 
@@ -260,17 +260,20 @@ public class UserController {
 
     /**
      * 创建新用户（注册）
-     * 无需权限验证
+     * 无需权限验证，但需要邮箱验证码
      *
-     * @param dto 用户注册信息
+     * @param dto  用户注册信息
+     * @param code 邮箱验证码
      * @return 创建后的用户
      * @author IhaveBB
-     * @date 2026/03/21
+     * @date 2026/03/22
      */
     @Operation(summary = "创建新用户")
     @PostMapping("/add")
-    public Result<?> createUser(@Valid @RequestBody UserRegisterDTO dto) {
-        User user = userService.createUser(dto);
+    public Result<?> createUser(
+            @Valid @RequestBody UserRegisterDTO dto,
+            @RequestParam String code) {
+        User user = userService.createUser(dto, code);
         user.setPassword(null);
         return Result.success(user);
     }

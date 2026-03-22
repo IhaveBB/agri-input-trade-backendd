@@ -14,6 +14,7 @@ import org.example.springboot.enums.ErrorCodeEnum;
 import org.example.springboot.enumClass.AccountStatus;
 import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.*;
+import org.springframework.context.annotation.Lazy;
 import org.example.springboot.util.JwtTokenUtils;
 import org.example.springboot.util.MenusUtils;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,7 +33,9 @@ public class UserService {
     @Value("${user.defaultPassword}")
     private String DEFAULT_PWD;
 
-
+    @Lazy
+    @Resource
+    private EmailService emailService;
 
     @Resource
     private AddressMapper addressMapper;
@@ -99,13 +102,20 @@ private FavoriteMapper favoriteMapper;
 
     /**
      * 用户注册（使用 DTO）
+     * 需要验证邮箱验证码
      *
-     * @param dto 用户注册信息
+     * @param dto  用户注册信息
+     * @param code 邮箱验证码
      * @return 创建后的用户实体
      * @author IhaveBB
      * @date 2026/03/22
      */
-    public User createUser(UserRegisterDTO dto) {
+    public User createUser(UserRegisterDTO dto, String code) {
+        // 验证邮箱验证码
+        if (!emailService.verifyRegisterCode(dto.getEmail(), code)) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "验证码错误或已过期");
+        }
+
         if (userMapper.selectOne(new QueryWrapper<User>().eq("username", dto.getUsername())) != null) {
             throw new BusinessException(ErrorCodeEnum.ALREADY_EXISTS, "用户名已存在");
         }

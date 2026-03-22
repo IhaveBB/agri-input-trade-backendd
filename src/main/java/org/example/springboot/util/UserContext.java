@@ -61,7 +61,7 @@ public class UserContext {
      */
     public static boolean isAdmin() {
         String role = getRole();
-        return role != null && "ADMIN".equalsIgnoreCase(role);
+        return role != null && ("ADMIN".equalsIgnoreCase(role) || "SUPER_ADMIN".equalsIgnoreCase(role));
     }
 
     /**

@@ -1,10 +1,12 @@
 package org.example.springboot.config;
 
 import jakarta.annotation.Resource;
+import org.example.springboot.util.FileUtil;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.PathMatchConfigurer;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /**
  * Web配置类
@@ -51,6 +53,13 @@ public class WebConfig implements WebMvcConfigurer {
      * @param registry 拦截器注册表
      */
     @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        // 将 /api/img/** 映射到磁盘上的 files/ 目录，用于访问上传的图片
+        registry.addResourceHandler("/api/img/**")
+                .addResourceLocations("file:" + FileUtil.FILE_BASE_PATH + "img/");
+    }
+
+    @Override
     public void addInterceptors(InterceptorRegistry registry) {
         // 添加JWT拦截器，应用于"/api/**"路径下的请求
         registry.addInterceptor(jwtInterceptor)
@@ -62,8 +71,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/api/user/add")         // 用户信息接口不需要拦截        \
                 .excludePathPatterns("/api/user/*")             // 用户信息接口不需要拦截（Ant风格匹配）
                 .excludePathPatterns("/api/email/**") // 发送邮件接口不需要拦截
-                .excludePathPatterns("/api/img/**")     // 图片资源接口不需要拦截
-                .excludePathPatterns("/api/file/**")
+                .excludePathPatterns("/api/img/**")     // 图片资源无需拦截
                 .excludePathPatterns("/api/v3/api-docs/**", "/api/swagger-ui.html", "/api/swagger-ui/**")
                 .excludePathPatterns("/api/doc.html","/api/webjars/**","/api/favicon.ico").excludePathPatterns("/api/checkIn/**");
     }

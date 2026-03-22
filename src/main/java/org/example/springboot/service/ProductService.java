@@ -259,6 +259,9 @@ public class ProductService {
                 case "sales":
                     queryWrapper.orderBy(true, isAsc, Product::getSalesCount);
                     break;
+                case "updatedAt":
+                    queryWrapper.orderBy(true, isAsc, Product::getUpdatedAt);
+                    break;
                 case "price":
                     // 对于价格排序，使用自定义SQL考虑折扣价格
                     String orderDirection = isAsc ? "ASC" : "DESC";

@@ -171,19 +171,19 @@ public class RecommendActionService {
         RecommendOverviewResponse response = new RecommendOverviewResponse();
 
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime lastMonthStart = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
+        LocalDateTime thisMonthStart = now.withDayOfMonth(1).toLocalDate().atStartOfDay();
 
         // 本月统计
-        long monthExposureCount = countActionByType(lastMonthStart, now, "EXPOSURE");
-        long monthClickCount = countActionByType(lastMonthStart, now, "CLICK");
-        long monthBuyCount = countActionByType(lastMonthStart, now, "BUY");
+        long monthExposureCount = countActionByType(thisMonthStart, now, "EXPOSURE");
+        long monthClickCount = countActionByType(thisMonthStart, now, "CLICK");
+        long monthBuyCount = countActionByType(thisMonthStart, now, "BUY");
 
-        // 上月同期统计（用于计算增长率）
-        LocalDateTime lastMonthStart2 = now.minusMonths(2).withDayOfMonth(1).toLocalDate().atStartOfDay();
-        LocalDateTime lastMonthEnd = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
-        long lastMonthExposureCount = countActionByType(lastMonthStart2, lastMonthEnd, "EXPOSURE");
-        long lastMonthClickCount = countActionByType(lastMonthStart2, lastMonthEnd, "CLICK");
-        long lastMonthBuyCount = countActionByType(lastMonthStart2, lastMonthEnd, "BUY");
+        // 上月同期统计（用于计算环比增长率，取上月同等天数）
+        LocalDateTime lastMonthStart = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
+        LocalDateTime lastMonthSameDay = now.minusMonths(1).toLocalDate().atStartOfDay();
+        long lastMonthExposureCount = countActionByType(lastMonthStart, lastMonthSameDay, "EXPOSURE");
+        long lastMonthClickCount = countActionByType(lastMonthStart, lastMonthSameDay, "CLICK");
+        long lastMonthBuyCount = countActionByType(lastMonthStart, lastMonthSameDay, "BUY");
 
         // 计算关键指标
         double ctr = monthExposureCount > 0 ? (double) monthClickCount / monthExposureCount * 100 : 0;
@@ -204,7 +204,7 @@ public class RecommendActionService {
         response.setBuyGrowth(String.format("%.2f", buyGrowth) + "%");
 
         // 覆盖用户数
-        Long coveredUsers = recommendActionMapper.countDistinctUsers(lastMonthStart, now, null);
+        Long coveredUsers = recommendActionMapper.countDistinctUsers(thisMonthStart, now, null);
         response.setCoveredUsers(coveredUsers != null ? coveredUsers : 0L);
 
         return response;

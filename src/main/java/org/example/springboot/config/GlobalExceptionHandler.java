@@ -10,6 +10,8 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
 
@@ -77,6 +79,15 @@ public class GlobalExceptionHandler {
     public Result<?> handleIllegalArgumentException(IllegalArgumentException e) {
         logger.warn("非法参数: {}", e.getMessage(), e);
         return Result.error(ErrorCodeEnum.PARAM_ERROR.getCode(), e.getMessage());
+    }
+
+    /**
+     * 处理接口不存在异常（404）
+     */
+    @ExceptionHandler({NoHandlerFoundException.class, NoResourceFoundException.class})
+    public Result<?> handleNotFound(Exception e) {
+        logger.warn("请求路径不存在: {}", e.getMessage());
+        return Result.error(ErrorCodeEnum.NOT_FOUND.getCode(), "请求的接口不存在");
     }
 
     /**
