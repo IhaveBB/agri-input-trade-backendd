@@ -137,9 +137,10 @@ public class CategoryController {
             @RequestParam(required = false) Long parentId,
             @RequestParam(required = false) Integer level,
             @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) Integer auditStatus,
             @RequestParam(defaultValue = "1") Integer currentPage,
             @RequestParam(defaultValue = "10") Integer size) {
-        return Result.success(categoryService.getCategoriesByPage(name, parentId, level, status, currentPage, size));
+        return Result.success(categoryService.getCategoriesByPage(name, parentId, level, status, auditStatus, currentPage, size));
     }
 
     /**

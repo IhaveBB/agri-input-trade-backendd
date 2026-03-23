@@ -30,7 +30,7 @@ public class Category {
     @Schema(description = "父分类ID，顶级分类为0或null")
     private Long parentId;
 
-    @Schema(description = "分类层级：1-一级分类，2-二级分类，3-三级分类")
+    @Schema(description = "分类层级：1-一级分类，2-二级分类，3-三级分类，4-四级分类")
     private Integer level;
 
     @Schema(description = "排序字段，数字越小越靠前")

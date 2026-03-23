@@ -56,8 +56,8 @@ public class CategoryService {
         if (parent == null) {
             throw new BusinessException(ErrorCodeEnum.CATEGORY_NOT_FOUND, "父分类不存在");
         }
-        if (parent.getLevel() >= 3) {
-            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "最多支持三级分类，无法在三级分类下再添加");
+        if (parent.getLevel() >= 4) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "最多支持四级分类，无法在四级分类下再添加");
         }
 
         // 检查名称是否重复（同级别下不能有同名）
@@ -119,8 +119,8 @@ public class CategoryService {
                 throw new BusinessException(ErrorCodeEnum.CATEGORY_NOT_FOUND, "父分类不存在");
             }
             level = parent.getLevel() + 1;
-            if (level > 3) {
-                throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "最多支持三级分类");
+            if (level > 4) {
+                throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "最多支持四级分类");
             }
         } else {
             parentId = 0L; // 顶级分类
@@ -257,7 +257,7 @@ public class CategoryService {
      * 分页查询分类列表
      */
     public Page<Category> getCategoriesByPage(String name, Long parentId, Integer level, Integer status,
-                                          Integer currentPage, Integer size) {
+                                              Integer auditStatus, Integer currentPage, Integer size) {
         LambdaQueryWrapper<Category> queryWrapper = new LambdaQueryWrapper<>();
         if (name != null && !name.isEmpty()) {
             queryWrapper.like(Category::getName, name);
@@ -274,6 +274,12 @@ public class CategoryService {
         if (status != null) {
             queryWrapper.eq(Category::getStatus, status);
         }
+
+        // 支持按审核状态过滤
+        if (auditStatus != null) {
+            queryWrapper.eq(Category::getAuditStatus, auditStatus);
+        }
+
         queryWrapper.orderByAsc(Category::getSortOrder).orderByDesc(Category::getCreatedAt);
 
         Page<Category> page = new Page<>(currentPage, size);

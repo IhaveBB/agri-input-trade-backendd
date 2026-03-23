@@ -38,7 +38,10 @@
       "Bash(/usr/local/mysql/bin/mysql --version)",
       "Read(//usr/local/mysql/**)",
       "Bash(find /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend/src -path */dto/statistics/*.java)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Read(//Users/ihavebb/workspace/code/agri-input-trade/**)",
+      "Read(//Users/ihavebb/workspace/code/**)",
+      "Read(//Users/ihavebb/**)"
     ]
   }
 }
