@@ -41,7 +41,12 @@
       "Bash(npm run:*)",
       "Read(//Users/ihavebb/workspace/code/agri-input-trade/**)",
       "Read(//Users/ihavebb/workspace/code/**)",
-      "Read(//Users/ihavebb/**)"
+      "Read(//Users/ihavebb/**)",
+      "Bash(find /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-backend -type f -name *.vue -o -name *.js -o -name *.html)",
+      "Bash(find /Users/ihavebb/workspace/code/agri-input-trade -type d -name node_modules -prune -o -type f \\\\\\(-name *.vue -o -name *.ts -o -name *.tsx -o -name *.js -o -name *.jsx \\\\\\) -print)",
+      "Bash(grep -r custom /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-frontend/src/views --include=*.vue -l)",
+      "Bash(,  \"description\": \"List files in project root directory\"} ])",
+      "Bash(,)"
     ]
   }
 }

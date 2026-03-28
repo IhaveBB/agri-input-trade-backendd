@@ -73,6 +73,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/api/email/**") // 发送邮件接口不需要拦截
                 .excludePathPatterns("/api/img/**")     // 图片资源无需拦截
                 .excludePathPatterns("/api/v3/api-docs/**", "/api/swagger-ui.html", "/api/swagger-ui/**")
-                .excludePathPatterns("/api/doc.html","/api/webjars/**","/api/favicon.ico").excludePathPatterns("/api/checkIn/**");
+                .excludePathPatterns("/api/doc.html","/api/webjars/**","/api/favicon.ico").excludePathPatterns("/api/checkIn/**")
+                .excludePathPatterns("/api/alipay/notify"); // 支付宝回调接口不需要拦截（支付宝服务器调用，有验签机制）
     }
 }

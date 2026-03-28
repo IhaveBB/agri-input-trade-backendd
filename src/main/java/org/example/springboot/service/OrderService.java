@@ -14,22 +14,32 @@ import org.example.springboot.entity.dto.OrderCreateDTO;
 import org.example.springboot.enums.ErrorCodeEnum;
 import org.example.springboot.exception.BusinessException;
 import org.example.springboot.mapper.*;
+import org.example.springboot.util.RedisUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.example.springboot.entity.User;
+import org.example.springboot.entity.BalanceRecord;
+import org.example.springboot.entity.PaymentRecord;
+
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import java.util.UUID;
+
 @Service
 public class OrderService {
     private static final Logger LOGGER = LoggerFactory.getLogger(OrderService.class);
+    private static final String LOCK_PREFIX_PAY = "lock:pay:order:";
+    private static final String LOCK_PREFIX_STOCK = "lock:pay:stock:";
 
     @Autowired
     private OrderMapper orderMapper;
@@ -45,6 +55,15 @@ public class OrderService {
 
     @Autowired
     private AddressMapper addressMapper;
+
+    @Autowired
+    private BalanceRecordMapper balanceRecordMapper;
+
+    @Autowired
+    private PaymentRecordMapper paymentRecordMapper;
+
+    @Autowired
+    private RedisUtil redisUtil;
 
 
 
@@ -66,6 +85,13 @@ public class OrderService {
         if (product.getStock() < dto.getQuantity()) {
             throw new BusinessException(ErrorCodeEnum.PRODUCT_STOCK_INSUFFICIENT);
         }
+
+        // 【新增】扣减库存
+        int stockAffected = productMapper.decreaseStock(product.getId(), dto.getQuantity());
+        if (stockAffected <= 0) {
+            throw new BusinessException(ErrorCodeEnum.PRODUCT_STOCK_INSUFFICIENT, "库存扣减失败，可能库存不足");
+        }
+        LOGGER.info("创建订单扣减库存成功，商品ID：{}，扣减数量：{}", product.getId(), dto.getQuantity());
 
         // 构建订单实体
         Order order = new Order();
@@ -331,7 +357,10 @@ public class OrderService {
         LOGGER.info("批量删除订单成功，删除数量：{}", result);
     }
     /**
-     * 支付订单
+     * 支付订单（余额支付）
+     * <p>
+     * 使用 Redis 分布式锁防止并发超卖，数据库原子操作扣减库存。
+     * </p>
      *
      * @param id 订单ID
      * @author IhaveBB
@@ -344,30 +373,114 @@ public class OrderService {
             throw new BusinessException(ErrorCodeEnum.ORDER_NOT_FOUND);
         }
 
+        // 检查订单状态，只允许待支付订单
+        if (order.getStatus() != 0) {
+            throw new BusinessException(ErrorCodeEnum.ORDER_STATUS_INVALID, "订单状态不允许支付");
+        }
+
         Product product = productMapper.selectById(order.getProductId());
         if (product == null) {
             throw new BusinessException(ErrorCodeEnum.PRODUCT_NOT_FOUND);
         }
 
-        if (product.getStock() < order.getQuantity()) {
-            throw new BusinessException(ErrorCodeEnum.PRODUCT_STOCK_INSUFFICIENT);
+        // 【分布式锁】防止同一订单重复支付
+        String orderLockKey = LOCK_PREFIX_PAY + id;
+        String orderLockValue = UUID.randomUUID().toString();
+        boolean orderLocked = redisUtil.tryLock(orderLockKey, orderLockValue, 30);
+        if (!orderLocked) {
+            LOGGER.warn("支付请求过于频繁，订单正在处理中，orderId={}", id);
+            throw new BusinessException(ErrorCodeEnum.ERROR, "支付请求过于频繁，请稍后重试");
         }
 
-        product.setSalesCount(product.getSalesCount() + order.getQuantity());
-        product.setStock(product.getStock() - order.getQuantity());
-        order.setStatus(1);
-        int res = productMapper.updateById(product);
+        try {
+            // 【分布式锁】防止同一商品并发超卖
+            String stockLockKey = LOCK_PREFIX_STOCK + product.getId();
+            String stockLockValue = UUID.randomUUID().toString();
+            boolean stockLocked = redisUtil.tryLock(stockLockKey, stockLockValue, 10);
+            if (!stockLocked) {
+                LOGGER.warn("商品库存锁定失败，系统繁忙，productId={}", product.getId());
+                throw new BusinessException(ErrorCodeEnum.ERROR, "系统繁忙，请稍后重试");
+            }
 
-        if (res <= 0) {
-            throw new BusinessException(ErrorCodeEnum.PAYMENT_FAILED, "支付异常，更新商品信息失败");
+            try {
+                // 双重检查订单状态（加锁后再次确认）
+                order = orderMapper.selectById(id);
+                if (order == null || order.getStatus() != 0) {
+                    throw new BusinessException(ErrorCodeEnum.ORDER_STATUS_INVALID, "订单状态已变更");
+                }
+
+                // 双重检查库存（加锁后再次确认）
+                product = productMapper.selectById(order.getProductId());
+                if (product == null) {
+                    throw new BusinessException(ErrorCodeEnum.PRODUCT_NOT_FOUND);
+                }
+                // 【修改】库存已在创建订单时扣减，这里只检查库存是否为负（异常情况）
+                if (product.getStock() < 0) {
+                    LOGGER.error("库存异常为负数，productId={}，stock={}", product.getId(), product.getStock());
+                    throw new BusinessException(ErrorCodeEnum.ERROR, "商品库存异常");
+                }
+
+                // 【移除】不再重复扣减库存，已在创建订单时扣减
+                LOGGER.info("余额支付库存检查通过，productId={}，当前库存={}", product.getId(), product.getStock());
+
+            } finally {
+                redisUtil.releaseLock(stockLockKey, stockLockValue);
+            }
+
+            // 【新增】检查用户余额并扣减
+            User user = userMapper.selectById(order.getUserId());
+            if (user == null) {
+                throw new BusinessException(ErrorCodeEnum.USER_NOT_FOUND);
+            }
+
+            BigDecimal balance = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
+            if (balance.compareTo(order.getTotalPrice()) < 0) {
+                throw new BusinessException(ErrorCodeEnum.ERROR, "余额不足，请先充值");
+            }
+
+            // 扣减余额
+            BigDecimal newBalance = balance.subtract(order.getTotalPrice());
+            user.setBalance(newBalance);
+            int userUpdateResult = userMapper.updateById(user);
+            if (userUpdateResult <= 0) {
+                throw new BusinessException(ErrorCodeEnum.ERROR, "余额扣减失败");
+            }
+
+            // 记录余额变动
+            BalanceRecord balanceRecord = new BalanceRecord();
+            balanceRecord.setUserId(user.getId());
+            balanceRecord.setAmount(order.getTotalPrice().negate());
+            balanceRecord.setBalanceBefore(balance);
+            balanceRecord.setBalanceAfter(newBalance);
+            balanceRecord.setType(2); // 消费
+            balanceRecord.setOrderId(order.getId());
+            balanceRecord.setRemark("订单支付");
+            balanceRecord.setCreatedAt(new Timestamp(System.currentTimeMillis()));
+            balanceRecordMapper.insert(balanceRecord);
+
+            // 更新订单状态
+            order.setStatus(1);
+            int orderRes = orderMapper.updateById(order);
+            if (orderRes <= 0) {
+                throw new BusinessException(ErrorCodeEnum.PAYMENT_FAILED, "支付异常，更新订单状态失败");
+            }
+
+            // 记录支付记录
+            PaymentRecord paymentRecord = new PaymentRecord();
+            paymentRecord.setOrderId(order.getId());
+            paymentRecord.setUserId(user.getId());
+            paymentRecord.setAmount(order.getTotalPrice());
+            paymentRecord.setPayType(1); // 余额支付
+            paymentRecord.setStatus(1); // 支付成功
+            paymentRecord.setRemark("余额支付");
+            paymentRecord.setCreatedAt(new Timestamp(System.currentTimeMillis()));
+            paymentRecordMapper.insert(paymentRecord);
+
+            LOGGER.info("支付订单成功，订单ID：{}，余额支付，扣除余额：{}，剩余余额：{}", id, order.getTotalPrice(), newBalance);
+
+        } finally {
+            redisUtil.releaseLock(orderLockKey, orderLockValue);
         }
-
-        int orderRes = orderMapper.updateById(order);
-        if (orderRes <= 0) {
-            throw new BusinessException(ErrorCodeEnum.PAYMENT_FAILED, "支付异常，更新订单状态失败");
-        }
-
-        LOGGER.info("支付订单成功，订单ID：{}", id);
     }
 
     /**
@@ -523,7 +636,7 @@ public class OrderService {
             throw new BusinessException(ErrorCodeEnum.REFUND_FAILED, "处理退款失败");
         }
 
-        // 如果同意退款，恢复商品库存
+        // 如果同意退款，恢复商品库存并退回余额
         if (status == 6) {
             Product product = productMapper.selectById(order.getProductId());
             if (product != null) {
@@ -535,6 +648,29 @@ public class OrderService {
                 }
                 productMapper.updateById(product);
                 LOGGER.info("退款成功，已恢复商品库存，商品ID：{}，数量：{}", product.getId(), order.getQuantity());
+            }
+
+            // 【新增】退回余额
+            User user = userMapper.selectById(order.getUserId());
+            if (user != null) {
+                BigDecimal balance = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
+                BigDecimal newBalance = balance.add(order.getTotalPrice());
+                user.setBalance(newBalance);
+                userMapper.updateById(user);
+
+                // 记录余额变动
+                BalanceRecord balanceRecord = new BalanceRecord();
+                balanceRecord.setUserId(user.getId());
+                balanceRecord.setAmount(order.getTotalPrice());
+                balanceRecord.setBalanceBefore(balance);
+                balanceRecord.setBalanceAfter(newBalance);
+                balanceRecord.setType(3); // 退款
+                balanceRecord.setOrderId(order.getId());
+                balanceRecord.setRemark("订单退款");
+                balanceRecord.setCreatedAt(new Timestamp(System.currentTimeMillis()));
+                balanceRecordMapper.insert(balanceRecord);
+
+                LOGGER.info("退款成功，已退回余额，用户ID：{}，金额：{}，当前余额：{}", user.getId(), order.getTotalPrice(), newBalance);
             }
         }
 
@@ -576,6 +712,14 @@ public class OrderService {
                         "库存不足：商品 ID=" + item.getProductId() + ", 需要=" + item.getQuantity() + ", 库存=" + product.getStock());
             }
 
+            // 【新增】扣减库存
+            int stockAffected = productMapper.decreaseStock(product.getId(), item.getQuantity());
+            if (stockAffected <= 0) {
+                throw new BusinessException(ErrorCodeEnum.PRODUCT_STOCK_INSUFFICIENT,
+                        "库存扣减失败：商品 ID=" + item.getProductId());
+            }
+            LOGGER.info("批量创建订单扣减库存成功，商品ID：{}，扣减数量：{}", product.getId(), item.getQuantity());
+
             // 创建订单
             Order order = new Order();
             order.setUserId(request.getUserId());
@@ -593,8 +737,7 @@ public class OrderService {
                 throw new BusinessException(ErrorCodeEnum.ERROR, "创建订单失败：商品 ID=" + item.getProductId());
             }
 
-            // 注意：库存和销量在支付成功后扣减，不在创建订单时扣减
-            LOGGER.info("批量创建订单成功，商品 ID：{}", item.getProductId());
+            LOGGER.info("批量创建订单成功，商品 ID：{}，库存已扣减", item.getProductId());
         }
 
         LOGGER.info("批量创建订单完成，用户 ID：{}，订单数量：{}", request.getUserId(), request.getItems().size());

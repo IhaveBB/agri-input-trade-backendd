@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.util.List;
 
@@ -48,6 +49,10 @@ public class User {
 
     @Schema(description = "更新时间")
     private Timestamp updatedAt;
+
+    @Schema(description = "账户余额")
+    private BigDecimal balance;
+
     @TableField(exist = false)
     private List<Menu> menuList;
     @TableField(exist = false)

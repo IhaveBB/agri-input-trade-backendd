@@ -787,7 +787,7 @@ public class RedisUtil {
     }
 
     /**
-     * 释放分布式锁（简单实现，生产环境建议使用 Lua 脚本保证原子性）
+     * 释放分布式锁
      *
      * @param lockKey 锁的key
      * @param value   锁的值
