@@ -41,6 +41,9 @@ public class RecommendationContext {
     @Resource
     private CollaborativeFilteringStrategy cfStrategy;
 
+    @Resource
+    private NewProductRecommendationStrategy newProductStrategy;
+
     /**
      * 初始化策略注册表
      */
@@ -52,6 +55,8 @@ public class RecommendationContext {
         registerStrategy(hotProductStrategy);
         // 注册纯协同过滤策略（对比算法）
         registerStrategy(cfStrategy);
+        // 注册新品推荐策略（独立接口使用，不混入smartRecommend）
+        registerStrategy(newProductStrategy);
 
         log.info("[推荐策略] 已注册{}种推荐策略", strategyRegistry.size());
     }

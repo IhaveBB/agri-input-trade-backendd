@@ -256,17 +256,17 @@ public class RecommendActionService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime thisMonthStart = now.withDayOfMonth(1).toLocalDate().atStartOfDay();
 
-        // 本月统计
+        // 本月统计（CLICK/BUY 排除 NATURAL 流量，保证与 EXPOSURE 口径一致）
         long monthExposureCount = countActionByType(thisMonthStart, now, "EXPOSURE", productIds);
-        long monthClickCount = countActionByType(thisMonthStart, now, "CLICK", productIds);
-        long monthBuyCount = countActionByType(thisMonthStart, now, "BUY", productIds);
+        long monthClickCount = countActionByType(thisMonthStart, now, "CLICK", productIds, true);
+        long monthBuyCount = countActionByType(thisMonthStart, now, "BUY", productIds, true);
 
         // 上月同期统计
         LocalDateTime lastMonthStart = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
         LocalDateTime lastMonthSameDay = now.minusMonths(1).toLocalDate().atStartOfDay();
         long lastMonthExposureCount = countActionByType(lastMonthStart, lastMonthSameDay, "EXPOSURE", productIds);
-        long lastMonthClickCount = countActionByType(lastMonthStart, lastMonthSameDay, "CLICK", productIds);
-        long lastMonthBuyCount = countActionByType(lastMonthStart, lastMonthSameDay, "BUY", productIds);
+        long lastMonthClickCount = countActionByType(lastMonthStart, lastMonthSameDay, "CLICK", productIds, true);
+        long lastMonthBuyCount = countActionByType(lastMonthStart, lastMonthSameDay, "BUY", productIds, true);
 
         // 计算关键指标
         double ctr = monthExposureCount > 0 ? (double) monthClickCount / monthExposureCount * 100 : 0;
@@ -440,13 +440,15 @@ public class RecommendActionService {
 
         List<Map<String, Object>> sourceStats = recommendActionMapper.countBySourceAndAction(startTime, now, productIdList);
 
-        // 按来源分组
+        // 按来源分组（仅统计 EXPOSURE 行为，因为只有曝光记录携带算法来源标识）
         Map<String, Long> sourceTotal = new HashMap<>();
         long total = 0;
 
         for (Map<String, Object> stat : sourceStats) {
             String source = (String) stat.get("source");
-            if (!"NATURAL".equals(source)) {
+            String actionType = (String) stat.get("action_type");
+            // 仅统计曝光行为，排除 NATURAL 和非曝光行为（如 RECOMMEND 来源的 CLICK 等）
+            if (!"NATURAL".equals(source) && "EXPOSURE".equals(actionType)) {
                 Long count = ((Number) stat.get("count")).longValue();
                 sourceTotal.put(source, sourceTotal.getOrDefault(source, 0L) + count);
                 total += count;
@@ -586,15 +588,18 @@ public class RecommendActionService {
         Long usersWithBuy = recommendActionMapper.countDistinctUsers(startTime, now, "BUY", productIdList);
         Long totalUsers = recommendActionMapper.countDistinctUsers(startTime, now, null, productIdList);
 
-        // 计算转化漏斗
-        double clickRate = totalUsers > 0 ? (double) usersWithClick / totalUsers * 100 : 0;
-        double buyRate = totalUsers > 0 ? (double) usersWithBuy / totalUsers * 100 : 0;
+        // 计算转化漏斗（totalUsers 为 Long，需先做空安全判断）
+        long safeTotalUsers = totalUsers != null ? totalUsers : 0L;
+        long safeUsersWithClick = usersWithClick != null ? usersWithClick : 0L;
+        long safeUsersWithBuy = usersWithBuy != null ? usersWithBuy : 0L;
+        double clickRate = safeTotalUsers > 0 ? (double) safeUsersWithClick / safeTotalUsers * 100 : 0;
+        double buyRate = safeTotalUsers > 0 ? (double) safeUsersWithBuy / safeTotalUsers * 100 : 0;
 
         // 构建漏斗DTO
         RecommendUserSimilarityDTO.FunnelDTO funnel = new RecommendUserSimilarityDTO.FunnelDTO();
-        funnel.setTotalUsers(totalUsers != null ? totalUsers : 0L);
-        funnel.setUsersWithClick(usersWithClick != null ? usersWithClick : 0L);
-        funnel.setUsersWithBuy(usersWithBuy != null ? usersWithBuy : 0L);
+        funnel.setTotalUsers(safeTotalUsers);
+        funnel.setUsersWithClick(safeUsersWithClick);
+        funnel.setUsersWithBuy(safeUsersWithBuy);
         funnel.setClickRate(String.format("%.2f", clickRate) + "%");
         funnel.setBuyRate(String.format("%.2f", buyRate) + "%");
         result.setFunnel(funnel);
@@ -931,15 +936,39 @@ public class RecommendActionService {
         return result;
     }
 
-    private long countActionByType(LocalDateTime startTime, LocalDateTime endTime, String actionType, Set<Long> productIds) {
+    /**
+     * 统计指定行为类型的记录数
+     *
+     * @param startTime  开始时间
+     * @param endTime    结束时间
+     * @param actionType 行为类型
+     * @param productIds 商品ID集合（可为null）
+     * @param excludeNatural 是否排除 NATURAL 来源（用于 CTR/CVR 计算时排除自然流量）
+     * @return 记录数
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    private long countActionByType(LocalDateTime startTime, LocalDateTime endTime,
+                                    String actionType, Set<Long> productIds, boolean excludeNatural) {
         LambdaQueryWrapper<RecommendAction> wrapper = new LambdaQueryWrapper<>();
         wrapper.ge(RecommendAction::getCreatedAt, startTime)
                .lt(RecommendAction::getCreatedAt, endTime)
                .eq(RecommendAction::getActionType, actionType);
+        if (excludeNatural) {
+            wrapper.ne(RecommendAction::getSource, "NATURAL");
+        }
         if (productIds != null && !productIds.isEmpty()) {
             wrapper.in(RecommendAction::getProductId, productIds);
         }
         return recommendActionMapper.selectCount(wrapper);
+    }
+
+    /**
+     * 统计指定行为类型的记录数（兼容旧调用，不过滤 NATURAL）
+     */
+    private long countActionByType(LocalDateTime startTime, LocalDateTime endTime,
+                                    String actionType, Set<Long> productIds) {
+        return countActionByType(startTime, endTime, actionType, productIds, false);
     }
 
     private double calculateGrowth(long current, long last) {

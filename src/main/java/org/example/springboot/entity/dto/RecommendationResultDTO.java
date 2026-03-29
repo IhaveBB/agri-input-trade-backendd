@@ -47,4 +47,7 @@ public class RecommendationResultDTO {
 
     @Schema(description = "匹配标签列表")
     private List<String> matchTags;
+
+    @Schema(description = "销量")
+    private Integer salesCount;
 }

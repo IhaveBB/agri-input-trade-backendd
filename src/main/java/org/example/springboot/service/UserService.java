@@ -62,6 +62,10 @@ private FavoriteMapper favoriteMapper;
     @Resource
     private LogisticsMapper logisticsMapper;
 
+    @Lazy
+    @Resource
+    private FusionRecommendationService fusionRecommendationService;
+
 
     /**
      * 根据邮箱查询用户
@@ -190,6 +194,12 @@ private FavoriteMapper favoriteMapper;
         if (result <= 0) {
             throw new BusinessException(ErrorCodeEnum.ERROR, "更新用户失败");
         }
+
+        // 用户画像相关字段变更后，清除推荐系统的画像缓存，确保下次推荐使用最新信息
+        if (dto.getLocation() != null || dto.getInterestedCrops() != null || dto.getInterestedAnimals() != null) {
+            fusionRecommendationService.invalidateUserProfile(id);
+        }
+
         return existingUser;
     }
 
@@ -287,6 +297,9 @@ private FavoriteMapper favoriteMapper;
         if (result <= 0) {
             throw new BusinessException(ErrorCodeEnum.ERROR, "更新位置失败");
         }
+
+        // 位置变更影响推荐画像，清除缓存
+        fusionRecommendationService.invalidateUserProfile(userId);
     }
 
     /**

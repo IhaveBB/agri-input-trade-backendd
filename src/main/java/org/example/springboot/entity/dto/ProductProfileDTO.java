@@ -66,4 +66,35 @@ public class ProductProfileDTO {
 
     @Schema(description = "一级分类 ID")
     private Long topCategoryId;
+
+    @Schema(description = "区域-季节配对列表（保持 product_region_season 的对应关系）")
+    private java.util.List<RegionSeasonPair> regionSeasonPairs;
+
+    /**
+     * 区域-季节配对，保持商家上架时配置的对应关系
+     * <p>
+     * 例如：华北→春季, 华南→夏季 表示该种子在华北适合春季种植、在华南适合夏季种植。
+     * 推荐时先匹配区域，再在该区域对应的季节中匹配当前/上一季节，避免区域和季节独立判断。
+     * </p>
+     *
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    @Data
+    @Schema(description = "区域-季节配对")
+    public static class RegionSeasonPair {
+
+        @Schema(description = "区域 ID")
+        private Long regionId;
+
+        @Schema(description = "季节 ID")
+        private Long seasonId;
+
+        public RegionSeasonPair() {}
+
+        public RegionSeasonPair(Long regionId, Long seasonId) {
+            this.regionId = regionId;
+            this.seasonId = seasonId;
+        }
+    }
 }

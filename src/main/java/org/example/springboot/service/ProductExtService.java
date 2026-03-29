@@ -15,6 +15,7 @@ import org.example.springboot.mapper.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +53,10 @@ public class ProductExtService {
 
     @Autowired
     private UserMapper userMapper;
+
+    @Lazy
+    @Autowired
+    private FusionRecommendationService fusionRecommendationService;
 
     /**
      * 创建商品（含扩展信息）
@@ -154,6 +159,10 @@ public class ProductExtService {
         }
 
         LOGGER.info("更新商品成功，商品ID：{}", id);
+
+        // 商品画像相关字段变更后，清除推荐系统的商品画像缓存，确保下次推荐使用最新信息
+        fusionRecommendationService.invalidateProductProfile(id);
+
         return convertToVO(productMapper.selectById(id));
     }
 

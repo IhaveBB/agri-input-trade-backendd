@@ -90,6 +90,7 @@ public class HotProductRecommendationStrategy implements RecommendationStrategy 
             dto.setPrice(product.getPrice() != null ? product.getPrice().doubleValue() : 0.0);
             dto.setImageUrl(product.getImageUrl());
             dto.setCategoryId(product.getCategoryId());
+            dto.setSalesCount(product.getSalesCount() != null ? product.getSalesCount() : 0);
 
             // 获取分类名称
             if (product.getCategoryId() != null) {

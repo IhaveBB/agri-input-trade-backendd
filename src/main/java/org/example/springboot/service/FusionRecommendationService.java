@@ -370,6 +370,45 @@ public class FusionRecommendationService implements RecommendationStrategy {
     }
 
     /**
+     * 使用户画像缓存失效
+     * <p>
+     * 当用户更新个人信息（地域、感兴趣作物、感兴趣动物等）时调用，
+     * 确保下次推荐时重新构建画像，而不是使用旧的缓存数据。
+     * </p>
+     *
+     * @param userId 用户 ID
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    public void invalidateUserProfile(Long userId) {
+        if (userId != null) {
+            userProfileCache.remove(userId);
+            log.info("[画像缓存] 已清除用户 {} 的画像缓存", userId);
+        }
+    }
+
+    /**
+     * 使商品画像缓存失效
+     * <p>
+     * 当商品信息（适用作物、适用动物、区域-季节配置等）更新时调用，
+     * 确保下次推荐时重新构建商品画像，而不是使用旧的缓存数据。
+     * 同时清除相关用户的推荐结果缓存，避免返回基于旧画像的推荐。
+     * </p>
+     *
+     * @param productId 商品 ID
+     * @author IhaveBB
+     * @date 2026/03/30
+     */
+    public void invalidateProductProfile(Long productId) {
+        if (productId != null) {
+            productProfileCache.remove(productId);
+            // 清除所有用户的推荐结果缓存，因为商品画像变更会影响推荐排序
+            recommendationCache.clear();
+            log.info("[画像缓存] 已清除商品 {} 的画像缓存及所有推荐结果缓存", productId);
+        }
+    }
+
+    /**
      * 获取商品画像
      *
      * @param productId 商品 ID
@@ -1080,11 +1119,14 @@ public class FusionRecommendationService implements RecommendationStrategy {
             // 没有配置则默认适用所有地区
             profile.setRegionIds(new ArrayList<>());
             profile.setSeasonIds(new ArrayList<>());
+            profile.setRegionSeasonPairs(new ArrayList<>());
             return;
         }
 
         List<Long> regionIds = new ArrayList<>();
         List<Long> seasonIds = new ArrayList<>();
+        // 保持区域-季节配对关系（核心：区域和季节是绑定的，不能拆开独立判断）
+        List<ProductProfileDTO.RegionSeasonPair> pairs = new ArrayList<>();
 
         for (ProductRegionSeason assoc : associations) {
             if (assoc.getRegionId() != null && !regionIds.contains(assoc.getRegionId())) {
@@ -1093,10 +1135,15 @@ public class FusionRecommendationService implements RecommendationStrategy {
             if (assoc.getSeasonId() != null && !seasonIds.contains(assoc.getSeasonId())) {
                 seasonIds.add(assoc.getSeasonId());
             }
+            // 记录配对关系
+            if (assoc.getRegionId() != null && assoc.getSeasonId() != null) {
+                pairs.add(new ProductProfileDTO.RegionSeasonPair(assoc.getRegionId(), assoc.getSeasonId()));
+            }
         }
 
         profile.setRegionIds(regionIds);
         profile.setSeasonIds(seasonIds);
+        profile.setRegionSeasonPairs(pairs);
 
         // 加载地区名称
         List<String> regionNames = new ArrayList<>();
@@ -1460,12 +1507,21 @@ public class FusionRecommendationService implements RecommendationStrategy {
     */
 
     /**
-     * 种子类商品：区域 + 季节加权打分
+     * 种子类商品：基于「区域-季节配对」的画像打分
      * <p>
-     * 公式：0.6 × 区域匹配 + 0.4 × 季节匹配
-     * 区域匹配：用户大区在商品适用区域内（含全国=8）→ 1.0，否则 0.0
-     * 季节匹配：当前季节在商品适用季节内（含全年=5）→ 1.0，否则 0.0
-     * 信息不全时对应维度给 0.5（中性分）
+     * 核心逻辑：区域和季节是绑定的（商家上架时配置 华北-春季, 华南-夏季 等配对），
+     * 不能把区域和季节拆开独立判断。
+     * </p>
+     * <p>
+     * 步骤：
+     * 1. 在商品的所有 regionSeasonPairs 中，找到区域匹配用户所在区域的配对
+     *    （用户大区 == 配对区域，或 配对区域 == 全国(8)）
+     * 2. 在匹配到的配对中，检查季节：
+     *    - 当前季节与配对季节一致 → 满分 1.0（正季购买）
+     *    - 当前季节是配对季节的上一季节 → 0.6（提前购买，如冬季买春季种子）
+     *    - 配对季节为全年(5) → 1.0
+     * 3. 无匹配区域或无匹配季节 → 0.0
+     * 4. 信息不全 → 0.5（中性分）
      * </p>
      *
      * @author IhaveBB
@@ -1474,32 +1530,83 @@ public class FusionRecommendationService implements RecommendationStrategy {
     private double computeSeedRegionSeasonScore(UserProfileDTO userProfile,
                                                  ProductProfileDTO productProfile,
                                                  String currentSeason) {
-        List<Long> regionIds = productProfile.getRegionIds();
-        List<Long> seasonIds = productProfile.getSeasonIds();
+        List<ProductProfileDTO.RegionSeasonPair> pairs = productProfile.getRegionSeasonPairs();
+        Long userRegionId = userProfile.getRegionId();
 
-        // 区域维度得分
-        double regionScore;
-        if (regionIds == null || regionIds.isEmpty() || userProfile.getRegionId() == null) {
-            regionScore = 0.5; // 信息不全，中性分
-        } else {
-            boolean regionMatch = regionIds.contains(userProfile.getRegionId())
-                    || regionIds.contains(8L); // 全国
-            regionScore = regionMatch ? 1.0 : 0.0;
+        // --- 信息不全时返回中性分 ---
+        if (pairs == null || pairs.isEmpty()) {
+            return 0.5; // 商品无区域-季节配置，中性分
+        }
+        if (userRegionId == null) {
+            return 0.5; // 用户无区域信息，中性分
         }
 
-        // 季节维度得分
-        double seasonScore;
-        if (seasonIds == null || seasonIds.isEmpty()) {
-            seasonScore = 0.5; // 无季节配置，中性分
-        } else {
-            Long currentSeasonId = getCurrentSeasonId();
-            boolean seasonMatch = seasonIds.contains(5L) // 全年
-                    || (currentSeasonId != null && seasonIds.contains(currentSeasonId));
-            seasonScore = seasonMatch ? 1.0 : 0.0;
+        // --- 第一步：在配对列表中筛选出区域匹配的配对 ---
+        // 全国(regionId=8)视为任意区域都匹配
+        List<ProductProfileDTO.RegionSeasonPair> matchedPairs = pairs.stream()
+                .filter(p -> userRegionId.equals(p.getRegionId()) || Long.valueOf(8L).equals(p.getRegionId()))
+                .collect(Collectors.toList());
+
+        if (matchedPairs.isEmpty()) {
+            // 商品不适用于用户所在区域
+            return 0.0;
         }
 
-        // 加权求和：0.6 × 区域 + 0.4 × 季节
-        return 0.6 * regionScore + 0.4 * seasonScore;
+        // --- 第二步：在区域匹配的配对中检查季节 ---
+        Long currentSeasonId = getCurrentSeasonId();
+        if (currentSeasonId == null) {
+            return 0.5; // 无法确定当前季节，中性分
+        }
+
+        double bestScore = 0.0;
+        for (ProductProfileDTO.RegionSeasonPair pair : matchedPairs) {
+            Long pairSeasonId = pair.getSeasonId();
+
+            // 全年(5) → 始终满分
+            if (Long.valueOf(5L).equals(pairSeasonId)) {
+                return 1.0;
+            }
+
+            // 当前季节与配对季节完全一致 → 满分
+            if (currentSeasonId.equals(pairSeasonId)) {
+                bestScore = Math.max(bestScore, 1.0);
+                continue;
+            }
+
+            // 提前购买：当前季节是配对季节的上一季节
+            // 例如：配对季节是春季(1)，当前是冬季(4) → 农民冬季提前购买春季种子
+            Long seasonBefore = getSeasonBefore(pairSeasonId);
+            if (currentSeasonId.equals(seasonBefore)) {
+                bestScore = Math.max(bestScore, 0.6);
+            }
+        }
+
+        return bestScore;
+    }
+
+    /**
+     * 获取指定季节的上一个季节 ID
+     * <p>
+     * 季节顺序：春(1) → 夏(2) → 秋(3) → 冬(4) → 春(1)
+     * getSeasonBefore(春) = 冬，表示如果产品适合春季，当前是冬季则用户在提前购买
+     * </p>
+     *
+     * @param seasonId 季节 ID（1=春, 2=夏, 3=秋, 4=冬）
+     * @return 上一个季节 ID，非标准季节返回 null
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    private Long getSeasonBefore(Long seasonId) {
+        if (seasonId == null) {
+            return null;
+        }
+        switch (seasonId.intValue()) {
+            case 1: return 4L; // 春的前一个季节是冬
+            case 2: return 1L; // 夏的前一个季节是春
+            case 3: return 2L; // 秋的前一个季节是夏
+            case 4: return 3L; // 冬的前一个季节是秋
+            default: return null;
+        }
     }
 
     /**
@@ -1580,11 +1687,11 @@ public class FusionRecommendationService implements RecommendationStrategy {
     private String getCurrentSeason() {
         Month month = LocalDate.now().getMonth();
         return switch (month) {
-            case MARCH, APRIL, MAY -> "春季";
-            case JUNE, JULY, AUGUST -> "夏季";
-            case SEPTEMBER, OCTOBER, NOVEMBER -> "秋季";
-            case DECEMBER, JANUARY, FEBRUARY -> "冬季";
-            default -> "春季";
+            case MARCH, APRIL, MAY -> "春";
+            case JUNE, JULY, AUGUST -> "夏";
+            case SEPTEMBER, OCTOBER, NOVEMBER -> "秋";
+            case DECEMBER, JANUARY, FEBRUARY -> "冬";
+            default -> "春";
         };
     }
 
@@ -1606,6 +1713,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
             dto.setPrice(product.getPrice() != null ? product.getPrice().doubleValue() : 0.0);
             dto.setImageUrl(product.getImageUrl());
             dto.setCategoryId(product.getCategoryId());
+            dto.setSalesCount(product.getSalesCount() != null ? product.getSalesCount() : 0);
 
             // 获取分类名称
             if (product.getCategoryId() != null) {
@@ -1723,6 +1831,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
             dto.setPrice(product.getPrice() != null ? product.getPrice().doubleValue() : 0.0);
             dto.setImageUrl(product.getImageUrl());
             dto.setCategoryId(product.getCategoryId());
+            dto.setSalesCount(product.getSalesCount() != null ? product.getSalesCount() : 0);
             dto.setScore(0.5); // 默认得分
             dto.setCfScore(0.0);
             dto.setProfileScore(0.5);
