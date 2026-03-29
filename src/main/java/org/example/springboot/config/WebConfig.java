@@ -68,8 +68,7 @@ public class WebConfig implements WebMvcConfigurer {
                 // 排除不需要拦截的路径模式
                 .excludePathPatterns("/api/user/login")  // 登录接口不需要拦截
                 .excludePathPatterns("/api/user/forget") // 忘记密码接口不需要拦截
-                .excludePathPatterns("/api/user/add")         // 用户信息接口不需要拦截        \
-                .excludePathPatterns("/api/user/*")             // 用户信息接口不需要拦截（Ant风格匹配）
+                .excludePathPatterns("/api/user/add")           // 用户注册接口不需要拦截
                 .excludePathPatterns("/api/email/**") // 发送邮件接口不需要拦截
                 .excludePathPatterns("/api/img/**")     // 图片资源无需拦截
                 .excludePathPatterns("/api/v3/api-docs/**", "/api/swagger-ui.html", "/api/swagger-ui/**")

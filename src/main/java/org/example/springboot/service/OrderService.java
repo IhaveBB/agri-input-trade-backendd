@@ -138,6 +138,12 @@ public class OrderService {
             throw new BusinessException(ErrorCodeEnum.ERROR, "更新订单状态失败");
         }
 
+        // 订单完成时增加商品销量
+        if (status == 3) {
+            productMapper.increaseSalesCount(order.getProductId(), order.getQuantity());
+            LOGGER.info("订单完成，商品销量+{}，商品ID：{}", order.getQuantity(), order.getProductId());
+        }
+
         syncLogisticsOnStatusChange(id, status);
 
         LOGGER.info("更新订单状态成功，订单ID：{}，新状态：{}", id, status);
@@ -640,12 +646,8 @@ public class OrderService {
         if (status == 6) {
             Product product = productMapper.selectById(order.getProductId());
             if (product != null) {
-                // 增加库存
+                // 恢复库存
                 product.setStock(product.getStock() + order.getQuantity());
-                // 减少销量
-                if (product.getSalesCount() >= order.getQuantity()) {
-                    product.setSalesCount(product.getSalesCount() - order.getQuantity());
-                }
                 productMapper.updateById(product);
                 LOGGER.info("退款成功，已恢复商品库存，商品ID：{}，数量：{}", product.getId(), order.getQuantity());
             }

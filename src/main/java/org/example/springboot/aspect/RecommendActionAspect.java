@@ -82,7 +82,6 @@ public class RecommendActionAspect {
     public Object recordProductClick(ProceedingJoinPoint joinPoint) throws Throwable {
         Object result = joinPoint.proceed();
 
-        // 埋点逻辑放在try-catch中，确保埋点失败不影响主业务
         try {
             // 获取商品ID（第一个参数）
             Object[] args = joinPoint.getArgs();

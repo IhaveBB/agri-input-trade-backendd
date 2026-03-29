@@ -147,33 +147,48 @@ public class StatisticsService {
         TopProductsStatisticsDTO result = new TopProductsStatisticsDTO();
 
         try {
-            LambdaQueryWrapper<Product> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(Product::getStatus, 1);
-
+            // 查询该商户的上架商品
+            LambdaQueryWrapper<Product> productWrapper = new LambdaQueryWrapper<>();
+            productWrapper.eq(Product::getStatus, 1);
             if (merchantId != null) {
-                queryWrapper.eq(Product::getMerchantId, merchantId);
+                productWrapper.eq(Product::getMerchantId, merchantId);
             }
+            List<Product> products = productMapper.selectList(productWrapper);
 
-            queryWrapper.select(Product::getId, Product::getName, Product::getSalesCount, Product::getMerchantId)
-                    .orderByDesc(Product::getSalesCount)
-                    .last("LIMIT 5");
-
-            List<Product> products = productMapper.selectList(queryWrapper);
-
+            // 从已完成订单中统计每个商品的真实销量和销售额
             List<TopProductsStatisticsDTO.TopProductDTO> topProductStats = new ArrayList<>();
             double totalSalesAmount = 0;
 
             for (Product product : products) {
-                TopProductsStatisticsDTO.TopProductDTO stat = new TopProductsStatisticsDTO.TopProductDTO();
-                stat.setId(product.getId());
-                stat.setName(product.getName());
-                stat.setSalesCount(product.getSalesCount());
+                LambdaQueryWrapper<Order> orderWrapper = new LambdaQueryWrapper<>();
+                orderWrapper.eq(Order::getProductId, product.getId())
+                        .eq(Order::getStatus, 3);
+                List<Order> orders = orderMapper.selectList(orderWrapper);
 
-                double salesAmount = sumProductSalesAmount(product.getId());
-                stat.setSalesAmount(salesAmount);
-                totalSalesAmount += salesAmount;
+                int salesCount = orders.stream()
+                        .mapToInt(Order::getQuantity)
+                        .sum();
+                double salesAmount = orders.stream()
+                        .mapToDouble(order -> order.getTotalPrice().doubleValue())
+                        .sum();
 
-                topProductStats.add(stat);
+                if (salesCount > 0) {
+                    TopProductsStatisticsDTO.TopProductDTO stat = new TopProductsStatisticsDTO.TopProductDTO();
+                    stat.setId(product.getId());
+                    stat.setName(product.getName());
+                    stat.setSalesCount(salesCount);
+                    stat.setSalesAmount(salesAmount);
+                    totalSalesAmount += salesAmount;
+                    topProductStats.add(stat);
+                }
+            }
+
+            // 按销量降序排序，取前5
+            topProductStats.sort((a, b) -> Integer.compare(
+                    b.getSalesCount() != null ? b.getSalesCount() : 0,
+                    a.getSalesCount() != null ? a.getSalesCount() : 0));
+            if (topProductStats.size() > 5) {
+                topProductStats = topProductStats.subList(0, 5);
             }
 
             result.setTopProducts(topProductStats);
@@ -476,17 +491,20 @@ public class StatisticsService {
     }
 
     private int sumCategorySalesCount(Long categoryId, Long merchantId) {
-        LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Product::getCategoryId, categoryId)
-               .eq(Product::getStatus, 1); // 只统计上架商品
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Order::getStatus, 3); // 只统计已完成订单
 
         if (merchantId != null) {
-            wrapper.eq(Product::getMerchantId, merchantId);
+            wrapper.inSql(Order::getProductId,
+                "SELECT id FROM product WHERE merchant_id = " + merchantId + " AND category_id = " + categoryId);
+        } else {
+            wrapper.inSql(Order::getProductId,
+                "SELECT id FROM product WHERE category_id = " + categoryId);
         }
 
-        List<Product> products = productMapper.selectList(wrapper);
-        return products.stream()
-                    .mapToInt(Product::getSalesCount)
+        List<Order> orders = orderMapper.selectList(wrapper);
+        return orders.stream()
+                    .mapToInt(Order::getQuantity)
                     .sum();
     }
 
@@ -508,16 +526,6 @@ public class StatisticsService {
                     .sum();
     }
 
-    private double sumProductSalesAmount(Long productId) {
-        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Order::getProductId, productId)
-               .eq(Order::getStatus, 3); // 已完成的订单
-
-        List<Order> orders = orderMapper.selectList(wrapper);
-        return orders.stream()
-                    .mapToDouble(order -> order.getTotalPrice().doubleValue())
-                    .sum();
-    }
 
     private double calculateGrowthRate(double current, double last) {
         if (last == 0) {

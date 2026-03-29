@@ -68,6 +68,9 @@ public class RecommendAction {
     @Schema(description = "推荐商品ID列表（上下文，用于归因）")
     private String contextProductIds;
 
+    @Schema(description = "停留时长（秒），仅CLICK行为有效")
+    private Integer duration;
+
     @Schema(description = "行为发生时间")
     private LocalDateTime createdAt;
 }

@@ -1,56 +1,50 @@
 package org.example.springboot.config;
 
+import com.alipay.api.AlipayClient;
+import com.alipay.api.DefaultAlipayClient;
+import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 
-@Component
+@Configuration
 @ConfigurationProperties(prefix = "alipay")
+@Data
 public class AliPayConfig {
 
     private String appId;
     private String appPrivateKey;
     private String alipayPublicKey;
     private String notifyUrl;
+    private String returnUrl;
+    private String gatewayUrl;
+    private String format = "JSON";
+    private String charset = "UTF-8";
+    private String signType = "RSA2";
 
-    public String getAppId() {
-        return appId;
-    }
-
-    public void setAppId(String appId) {
-        this.appId = appId;
-    }
-
-    public String getAppPrivateKey() {
-        return appPrivateKey;
-    }
-
-    public void setAppPrivateKey(String appPrivateKey) {
-        this.appPrivateKey = appPrivateKey;
-    }
-
-    public String getAlipayPublicKey() {
-        return alipayPublicKey;
-    }
-
-    public void setAlipayPublicKey(String alipayPublicKey) {
-        this.alipayPublicKey = alipayPublicKey;
-    }
-
-    public String getNotifyUrl() {
-        return notifyUrl;
-    }
-
-    public void setNotifyUrl(String notifyUrl) {
-        this.notifyUrl = notifyUrl;
+    /**
+     * AlipayClient 单例 Bean
+     */
+    @Bean
+    public AlipayClient alipayClient() {
+        return new DefaultAlipayClient(
+                gatewayUrl,
+                appId,
+                appPrivateKey,
+                format,
+                charset,
+                alipayPublicKey,
+                signType
+        );
     }
 
     @Override
     public String toString() {
         return "AliPayConfig{" +
                 "appId='" + appId + '\'' +
-                ", appPrivateKey='" + appPrivateKey + '\'' +
-                ", alipayPublicKey='" + alipayPublicKey + '\'' +
+                ", gatewayUrl='" + gatewayUrl + '\'' +
                 ", notifyUrl='" + notifyUrl + '\'' +
+                ", returnUrl='" + returnUrl + '\'' +
                 '}';
     }
 }

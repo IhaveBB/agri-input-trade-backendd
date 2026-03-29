@@ -43,11 +43,7 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class AlipayService {
     private static final Logger LOGGER = LoggerFactory.getLogger(AlipayService.class);
-    private static final String GATEWAY_URL = "https://openapi-sandbox.dl.alipaydev.com/gateway.do";
-    private static final String FORMAT = "JSON";
     private static final String CHARSET = "UTF-8";
-    //签名方式
-    private static final String SIGN_TYPE = "RSA2";
     // 分布式锁key前缀
     private static final String LOCK_PREFIX_PAY = "lock:pay:order:";
     private static final String LOCK_PREFIX_STOCK = "lock:pay:stock:";
@@ -56,6 +52,9 @@ public class AlipayService {
 
     @Resource
     private AliPayConfig aliPayConfig;
+
+    @Resource
+    private AlipayClient alipayClient;
 
     @Autowired
     private OrderMapper orderMapper;
@@ -134,13 +133,12 @@ public class AlipayService {
             // 设置订单支付中标记（10分钟过期，与支付宝支付超时时间一致）
             redisUtil.set(ORDER_PAYING_PREFIX + orderId, "1", 600);
 
-            // 1. 创建Client，通用SDK提供的Client，负责调用支付宝的API
-            AlipayClient alipayClient = new DefaultAlipayClient(GATEWAY_URL, aliPayConfig.getAppId(),
-                    aliPayConfig.getAppPrivateKey(), FORMAT, CHARSET, aliPayConfig.getAlipayPublicKey(), SIGN_TYPE);
+            // 1. 使用单例 AlipayClient
             LOGGER.info("alipay:" + aliPayConfig.toString());
             // 2. 创建 Request并设置Request参数
-            AlipayTradePagePayRequest request = new AlipayTradePagePayRequest();  // 发送请求的 Request类
+            AlipayTradePagePayRequest request = new AlipayTradePagePayRequest();
             request.setNotifyUrl(aliPayConfig.getNotifyUrl());
+            request.setReturnUrl(aliPayConfig.getReturnUrl());
             JSONObject bizContent = new JSONObject();
 
             BigDecimal totalAmount = order.getTotalPrice();
@@ -152,7 +150,7 @@ public class AlipayService {
             bizContent.set("product_code", "FAST_INSTANT_TRADE_PAY");  // 固定配置
             LOGGER.info(bizContent.toString());
             request.setBizContent(bizContent.toString());
-            request.setReturnUrl("http://localhost:8080/order"); // 支付完成后自动跳转到本地页面的路径
+            // returnUrl 已在上方通过 aliPayConfig 设置
             // 执行请求，拿到响应的结果，返回给浏览器
             String form = "";
 
@@ -205,13 +203,12 @@ public class AlipayService {
             // 设置充值支付中标记（10分钟过期）
             redisUtil.set(RECHARGE_PAYING_PREFIX + rechargeRecord.getId(), "1", 600);
 
-            // 1. 创建Client
-            AlipayClient alipayClient = new DefaultAlipayClient(GATEWAY_URL, aliPayConfig.getAppId(),
-                    aliPayConfig.getAppPrivateKey(), FORMAT, CHARSET, aliPayConfig.getAlipayPublicKey(), SIGN_TYPE);
+            // 1. 使用单例 AlipayClient
 
             // 2. 创建 Request并设置Request参数
             AlipayTradePagePayRequest request = new AlipayTradePagePayRequest();
             request.setNotifyUrl(aliPayConfig.getNotifyUrl());
+            request.setReturnUrl(aliPayConfig.getReturnUrl());
 
             JSONObject bizContent = new JSONObject();
             // 使用 RECHARGE_ 前缀区分充值订单
@@ -222,7 +219,6 @@ public class AlipayService {
 
             LOGGER.info("充值支付参数：{}", bizContent.toString());
             request.setBizContent(bizContent.toString());
-            request.setReturnUrl("http://localhost:8080/user-center"); // 充值完成后跳转到个人中心
 
             // 执行请求，拿到响应的结果
             String form = "";
@@ -255,7 +251,6 @@ public class AlipayService {
                     Product product = productMapper.selectById(productId);
                     if (product != null) {
                         product.setStock(product.getStock() + quantity);
-                        product.setSalesCount(Math.max(0, product.getSalesCount() - quantity));
                         productMapper.updateById(product);
                         LOGGER.info("库存回滚成功，productId={}，回滚数量={}", productId, quantity);
                     }

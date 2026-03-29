@@ -181,23 +181,55 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
             return calculateFreshnessScore(product);
         }
 
+        // 判断是否为种子类商品
+        boolean isSeed = isSeedProduct(product.getCategoryId());
+
         // 1. 品类偏好匹配（30%）
         double categoryScore = calculateCategoryScore(product, userProfile);
 
         // 2. 价格区间匹配（25%）
         double priceScore = calculatePriceScore(product, userProfile);
 
-        // 3. 地域匹配（20%）
-        double regionScore = calculateRegionScore(product, userProfile);
+        // 3. 按商品类型计算第三维度（35% = 原20%+15%）
+        double thirdDimensionScore;
+        if (isSeed) {
+            // 种子：地域+季节匹配
+            thirdDimensionScore = calculateRegionScore(product, userProfile);
+        } else {
+            // 非种子（农药、肥料等）：适用作物匹配
+            thirdDimensionScore = calculateCropScore(product, userProfile);
+        }
 
-        // 4. 适用作物匹配（15%，农资电商特有）
-        double cropScore = calculateCropScore(product, userProfile);
-
-        // 5. 新品新鲜度（10%）
+        // 4. 新品新鲜度（10%）
         double freshnessScore = calculateFreshnessScore(product);
 
         // 加权求和
-        return 0.3 * categoryScore + 0.25 * priceScore + 0.2 * regionScore + 0.15 * cropScore + 0.1 * freshnessScore;
+        return 0.3 * categoryScore + 0.25 * priceScore + 0.35 * thirdDimensionScore + 0.1 * freshnessScore;
+    }
+
+    /**
+     * 判断商品是否属于种子分类（一级分类ID=1为种子）
+     */
+    private boolean isSeedProduct(Long categoryId) {
+        if (categoryId == null) {
+            return false;
+        }
+        Long currentId = categoryId;
+        int maxDepth = 10;
+        while (maxDepth-- > 0) {
+            Category category = categoryMapper.selectById(currentId);
+            if (category == null) {
+                return false;
+            }
+            if (category.getLevel() != null && category.getLevel() == 1) {
+                return category.getId() == 1L;
+            }
+            if (category.getParentId() == null || category.getParentId() == 0L) {
+                return category.getId() == 1L;
+            }
+            currentId = category.getParentId();
+        }
+        return false;
     }
 
     /**

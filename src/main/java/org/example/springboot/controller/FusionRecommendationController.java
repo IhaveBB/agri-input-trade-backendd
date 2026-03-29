@@ -13,6 +13,7 @@ import org.example.springboot.util.UserContext;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 融合推荐算法控制器
@@ -35,6 +36,7 @@ public class FusionRecommendationController {
     private final HotProductRecommendationStrategy hotProductStrategy;
     private final CollaborativeFilteringStrategy cfStrategy;
     private final RecommendationContext recommendationContext;
+    private final RecommendActionService recommendActionService;
 
     /**
      * 获取个性化推荐
@@ -244,5 +246,35 @@ public class FusionRecommendationController {
         List<RecommendationResultDTO> recommendations = cfStrategy.recommend(userId, profile, limit);
 
         return Result.success(recommendations);
+    }
+
+    /**
+     * 上报商品详情页停留时长
+     * <p>
+     * 前端在用户离开商品详情页时调用，用于记录用户对商品的关注程度。
+     * 停留时长用于推荐算法交互矩阵中过滤无效浏览（停留过短不计入交互）。
+     * </p>
+     *
+     * @param request 包含 productId 和 duration（秒）
+     * @return 操作结果
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    @Operation(summary = "上报停留时长", description = "记录用户在商品详情页的停留时长，用于推荐算法优化")
+    @PostMapping("/dwell")
+    public Result<Void> reportDwellDuration(@RequestBody Map<String, Object> request) {
+        Long userId = UserContext.getUserId();
+        if (userId == null) {
+            return Result.success(); // 未登录用户不记录
+        }
+        Object productIdObj = request.get("productId");
+        Object durationObj = request.get("duration");
+        if (productIdObj == null || durationObj == null) {
+            return Result.success();
+        }
+        Long productId = Long.valueOf(productIdObj.toString());
+        Integer duration = Integer.valueOf(durationObj.toString());
+        recommendActionService.reportDwellDuration(userId, productId, duration);
+        return Result.success();
     }
 }

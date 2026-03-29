@@ -49,6 +49,9 @@ public class ProductProfileDTO {
     @Schema(description = "是否热销：true/false")
     private Boolean isHot;
 
+    @Schema(description = "是否为种子类商品")
+    private Boolean isSeed;
+
     @Schema(description = "适用作物 ID 列表")
     private java.util.List<Long> cropIds;
 

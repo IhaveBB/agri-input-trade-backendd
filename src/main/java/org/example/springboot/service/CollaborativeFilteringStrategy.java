@@ -10,6 +10,7 @@ import org.example.springboot.entity.dto.UserProfileDTO;
 import org.example.springboot.mapper.*;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -56,6 +57,16 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
     private ReviewMapper reviewMapper;
 
     // ==================== 缓存结构 ====================
+
+    /**
+     * 交互矩阵重建锁
+     */
+    private final Object matrixLock = new Object();
+
+    /**
+     * 交互矩阵最后重建时间
+     */
+    private volatile long matrixLastRefreshTime = 0;
 
     /**
      * 用户 - 商品交互强度矩阵缓存
@@ -129,9 +140,24 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
     }
 
     /**
-     * 刷新交互矩阵
+     * 刷新交互矩阵（带并发保护）
      */
     private void refreshInteractionMatrix() {
+        synchronized (matrixLock) {
+            // 缓存未过期则跳过重建（默认1小时）
+            long cacheExpireMs = recommendationConfig.getSimilarityCacheExpireSeconds() * 1000L;
+            if (!userInteractionMatrix.isEmpty() && (System.currentTimeMillis() - matrixLastRefreshTime) < cacheExpireMs) {
+                return;
+            }
+            doRefreshInteractionMatrix();
+            matrixLastRefreshTime = System.currentTimeMillis();
+        }
+    }
+
+    /**
+     * 实际执行交互矩阵重建（已在 synchronized 块内）
+     */
+    private void doRefreshInteractionMatrix() {
         userInteractionMatrix.clear();
         // 交互矩阵重建后相似度矩阵必须同步清空，确保下一步重新计算
         itemSimilarityMatrix.clear();
@@ -174,20 +200,48 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
                     recommendationConfig.getCartWeight());
         }
 
-        // 加载浏览（点击）行为
+        // 加载浏览（点击）行为（去重 + 停留时长过滤 + 封顶）
         LambdaQueryWrapper<RecommendAction> clickWrapper = new LambdaQueryWrapper<>();
-        clickWrapper.eq(RecommendAction::getActionType, "CLICK");
+        clickWrapper.eq(RecommendAction::getActionType, "CLICK")
+                .orderByAsc(RecommendAction::getCreatedAt);
         List<RecommendAction> clicks = recommendActionMapper.selectList(clickWrapper);
+
+        Map<String, LocalDateTime> lastClickTimeMap = new HashMap<>();
+        Map<String, Double> clickWeightMap = new HashMap<>();
+        int clickWeightCap = recommendationConfig.getClickWeight() * 3;
 
         for (RecommendAction click : clicks) {
             if (click.getUserId() == null || click.getProductId() == null) {
                 continue;
             }
-            addToInteraction(click.getUserId(), click.getProductId(),
-                    recommendationConfig.getClickWeight());
+            // 停留时长过滤：duration < 5秒视为无效浏览
+            if (click.getDuration() != null && click.getDuration() < 5) {
+                continue;
+            }
+            // 1分钟内重复点击去重
+            String dedupKey = click.getUserId() + "_" + click.getProductId();
+            LocalDateTime lastTime = lastClickTimeMap.get(dedupKey);
+            if (lastTime != null && click.getCreatedAt() != null
+                    && java.time.Duration.between(lastTime, click.getCreatedAt()).toMinutes() < 1) {
+                continue;
+            }
+            if (click.getCreatedAt() != null) {
+                lastClickTimeMap.put(dedupKey, click.getCreatedAt());
+            }
+            // 封顶
+            double currentWeight = clickWeightMap.getOrDefault(dedupKey, 0.0);
+            if (currentWeight >= clickWeightCap) {
+                continue;
+            }
+            double addWeight = Math.min(recommendationConfig.getClickWeight(), clickWeightCap - currentWeight);
+            clickWeightMap.merge(dedupKey, addWeight, Double::sum);
+            addToInteraction(click.getUserId(), click.getProductId(), addWeight);
         }
 
-        // 加载评分行为（评分值作为交互强度）
+        // 加载评分行为（双向信号：高分正向，低分负向）
+        // 公式：reviewWeight = (rating - 3) × reviewWeightBase
+        //   5星 → +2×base, 4星 → +1×base, 3星 → 0, 2星 → -1×base, 1星 → -2×base
+        // 购买后低分(≤2星)额外惩罚：回扣购买权重50%
         LambdaQueryWrapper<Review> reviewWrapper = new LambdaQueryWrapper<>();
         reviewWrapper.isNotNull(Review::getRating).eq(Review::getStatus, 1);
         List<Review> reviews = reviewMapper.selectList(reviewWrapper);
@@ -197,8 +251,12 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
                     || review.getRating() == null || review.getRating() <= 0) {
                 continue;
             }
-            addToInteraction(review.getUserId(), review.getProductId(),
-                    review.getRating() * recommendationConfig.getReviewWeight());
+            double reviewInteractionWeight = (review.getRating() - 3) * recommendationConfig.getReviewWeight();
+            addToInteraction(review.getUserId(), review.getProductId(), reviewInteractionWeight);
+            if (review.getRating() <= 2) {
+                addToInteraction(review.getUserId(), review.getProductId(),
+                        -recommendationConfig.getPurchaseWeight() * 0.5);
+            }
         }
     }
 
@@ -210,8 +268,11 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
      * @param weight    交互权重（支持小数，用于评分行为：rating × reviewWeight）
      */
     private void addToInteraction(Long userId, Long productId, double weight) {
-        userInteractionMatrix.computeIfAbsent(userId, k -> new HashMap<>())
-                .merge(productId, weight, Double::sum);
+        Map<Long, Double> userMap = userInteractionMatrix.computeIfAbsent(userId, k -> new HashMap<>());
+        userMap.merge(productId, weight, Double::sum);
+        if (userMap.getOrDefault(productId, 0.0) <= 0) {
+            userMap.remove(productId);
+        }
     }
 
     /**

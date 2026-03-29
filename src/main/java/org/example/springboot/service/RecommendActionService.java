@@ -133,6 +133,43 @@ public class RecommendActionService {
     }
 
     /**
+     * 上报商品停留时长
+     * <p>
+     * 前端在用户离开商品详情页时调用，更新最近一条CLICK记录的duration字段。
+     * 用于推荐算法中过滤无效浏览（停留过短的点击不计入交互矩阵）。
+     * </p>
+     *
+     * @param userId    用户ID
+     * @param productId 商品ID
+     * @param duration  停留时长（秒）
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    @Async("recommendActionExecutor")
+    public void reportDwellDuration(Long userId, Long productId, Integer duration) {
+        try {
+            if (userId == null || productId == null || duration == null || duration <= 0) {
+                return;
+            }
+            // 查询该用户对该商品最近的一条CLICK记录
+            LambdaQueryWrapper<RecommendAction> wrapper = new LambdaQueryWrapper<>();
+            wrapper.eq(RecommendAction::getUserId, userId)
+                    .eq(RecommendAction::getProductId, productId)
+                    .eq(RecommendAction::getActionType, "CLICK")
+                    .orderByDesc(RecommendAction::getCreatedAt)
+                    .last("LIMIT 1");
+            RecommendAction lastClick = recommendActionMapper.selectOne(wrapper);
+            if (lastClick != null) {
+                lastClick.setDuration(duration);
+                recommendActionMapper.updateById(lastClick);
+                LOGGER.info("[推荐埋点] 用户{}在商品{}停留{}秒", userId, productId, duration);
+            }
+        } catch (Exception e) {
+            LOGGER.error("[推荐埋点] 上报停留时长失败: {}", e.getMessage());
+        }
+    }
+
+    /**
      * 统一记录行为
      */
     private void recordAction(Long userId, Long productId, Long categoryId,

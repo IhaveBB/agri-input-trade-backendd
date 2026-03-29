@@ -83,6 +83,16 @@ public class FusionRecommendationService implements RecommendationStrategy {
     // ==================== 缓存结构 ====================
 
     /**
+     * 交互矩阵重建锁，防止并发重建导致数据混乱
+     */
+    private final Object matrixLock = new Object();
+
+    /**
+     * 交互矩阵最后重建时间（毫秒时间戳）
+     */
+    private volatile long matrixLastRefreshTime = 0;
+
+    /**
      * 用户 - 商品交互强度矩阵缓存
      * Key: userId, Value: Map<productId, interactionStrength>
      */
@@ -400,6 +410,22 @@ public class FusionRecommendationService implements RecommendationStrategy {
      * </p>
      */
     private void refreshInteractionMatrix() {
+        synchronized (matrixLock) {
+            long cacheExpireMs = recommendationConfig.getSimilarityCacheExpireSeconds() * 1000L;
+            long now = System.currentTimeMillis();
+            // 缓存未过期，跳过重建（避免并发请求重复查询数据库）
+            if (!userInteractionMatrix.isEmpty() && (now - matrixLastRefreshTime) < cacheExpireMs) {
+                return;
+            }
+            doRefreshInteractionMatrix();
+            matrixLastRefreshTime = System.currentTimeMillis();
+        }
+    }
+
+    /**
+     * 实际执行交互矩阵重建（已在 synchronized 块内，线程安全）
+     */
+    private void doRefreshInteractionMatrix() {
         log.info("[交互矩阵] 开始构建用户-商品交互矩阵（整合浏览/收藏/加购/购买/评分 5 类行为）...");
 
         userInteractionMatrix.clear();
@@ -451,37 +477,80 @@ public class FusionRecommendationService implements RecommendationStrategy {
         log.info("[交互矩阵] 加购行为: {}条（权重={}）", cartCount, recommendationConfig.getCartWeight());
 
         // 4. 加载浏览（点击）行为（来自推荐埋点记录）
+        // 规则：①停留时长 < 5秒的不计入 ②同一用户同一商品1分钟内的重复点击去重 ③封顶权重
         LambdaQueryWrapper<RecommendAction> clickWrapper = new LambdaQueryWrapper<>();
-        clickWrapper.eq(RecommendAction::getActionType, "CLICK");
+        clickWrapper.eq(RecommendAction::getActionType, "CLICK")
+                .orderByAsc(RecommendAction::getCreatedAt);
         List<RecommendAction> clicks = recommendActionMapper.selectList(clickWrapper);
         int clickCount = 0;
+        int filteredByDuration = 0;
+        int filteredByDedup = 0;
+        // 用于去重：key = userId_productId, value = 上一次有效点击时间
+        Map<String, java.time.LocalDateTime> lastClickTimeMap = new HashMap<>();
+        // 用于封顶：key = userId_productId, value = 已累加的点击权重
+        Map<String, Double> clickWeightMap = new HashMap<>();
+        int clickWeightCap = recommendationConfig.getClickWeight() * 3; // 封顶 = 单次权重 × 3
         for (RecommendAction click : clicks) {
             if (click.getUserId() == null || click.getProductId() == null) {
                 continue;
             }
-            addToInteraction(click.getUserId(), click.getProductId(),
-                    recommendationConfig.getClickWeight());
+            // ① 停留时长过滤：duration < 5秒视为无效浏览
+            if (click.getDuration() != null && click.getDuration() < 5) {
+                filteredByDuration++;
+                continue;
+            }
+            // ② 1分钟内重复点击去重
+            String dedupKey = click.getUserId() + "_" + click.getProductId();
+            java.time.LocalDateTime lastTime = lastClickTimeMap.get(dedupKey);
+            if (lastTime != null && click.getCreatedAt() != null
+                    && java.time.Duration.between(lastTime, click.getCreatedAt()).toMinutes() < 1) {
+                filteredByDedup++;
+                continue;
+            }
+            if (click.getCreatedAt() != null) {
+                lastClickTimeMap.put(dedupKey, click.getCreatedAt());
+            }
+            // ③ 封顶：同一用户同一商品的点击权重不超过上限
+            double currentWeight = clickWeightMap.getOrDefault(dedupKey, 0.0);
+            if (currentWeight >= clickWeightCap) {
+                continue;
+            }
+            double addWeight = Math.min(recommendationConfig.getClickWeight(), clickWeightCap - currentWeight);
+            clickWeightMap.merge(dedupKey, addWeight, Double::sum);
+            addToInteraction(click.getUserId(), click.getProductId(), addWeight);
             clickCount++;
         }
-        log.info("[交互矩阵] 浏览行为: {}条（权重={}）", clickCount, recommendationConfig.getClickWeight());
+        log.info("[交互矩阵] 浏览行为: {}条有效（权重={}，封顶={}），过滤：停留不足{}条，去重{}条",
+                clickCount, recommendationConfig.getClickWeight(), clickWeightCap,
+                filteredByDuration, filteredByDedup);
 
-        // 5. 加载评分行为（以评分值作为交互强度，高分正向信号更强）
+        // 5. 加载评分行为（评分作为双向信号：高分正向，低分负向）
+        // 公式：reviewWeight = (rating - 3) × reviewWeightBase
+        //   5星 → +2 × base, 4星 → +1 × base, 3星 → 0, 2星 → -1 × base, 1星 → -2 × base
+        // 同时，若用户购买后打了低分（≤2星），降低该订单的购买权重
         LambdaQueryWrapper<Review> reviewWrapper = new LambdaQueryWrapper<>();
         reviewWrapper.isNotNull(Review::getRating).eq(Review::getStatus, 1);
         List<Review> reviews = reviewMapper.selectList(reviewWrapper);
         int reviewCount = 0;
+        int lowRatingPenaltyCount = 0;
         for (Review review : reviews) {
             if (review.getUserId() == null || review.getProductId() == null
                     || review.getRating() == null || review.getRating() <= 0) {
                 continue;
             }
-            // 实际权重 = rating(1-5) × reviewWeight，高分贡献更强
-            addToInteraction(review.getUserId(), review.getProductId(),
-                    review.getRating() * recommendationConfig.getReviewWeight());
+            // 评分双向权重：(rating - 3) × reviewWeight
+            double reviewInteractionWeight = (review.getRating() - 3) * recommendationConfig.getReviewWeight();
+            addToInteraction(review.getUserId(), review.getProductId(), reviewInteractionWeight);
+            // 购买后低分惩罚：如果该用户购买过此商品且评分 ≤ 2，回扣购买权重
+            if (review.getRating() <= 2) {
+                double penalty = -recommendationConfig.getPurchaseWeight() * 0.5;
+                addToInteraction(review.getUserId(), review.getProductId(), penalty);
+                lowRatingPenaltyCount++;
+            }
             reviewCount++;
         }
-        log.info("[交互矩阵] 评分行为: {}条（权重基数={}，实际权重=rating×基数）",
-                reviewCount, recommendationConfig.getReviewWeight());
+        log.info("[交互矩阵] 评分行为: {}条（双向权重：(rating-3)×{}），低分惩罚(≤2星): {}条（回扣购买权重50%）",
+                reviewCount, recommendationConfig.getReviewWeight(), lowRatingPenaltyCount);
 
         int totalActions = purchaseCount + favoriteCount + cartCount + clickCount + reviewCount;
         log.info("[交互矩阵] 构建完成：共{}个用户有交互数据，行为记录总计{}条",
@@ -496,8 +565,12 @@ public class FusionRecommendationService implements RecommendationStrategy {
      * @param weight    交互权重（支持小数，用于评分行为：rating × reviewWeight）
      */
     private void addToInteraction(Long userId, Long productId, double weight) {
-        userInteractionMatrix.computeIfAbsent(userId, k -> new HashMap<>())
-                .merge(productId, weight, Double::sum);
+        Map<Long, Double> userMap = userInteractionMatrix.computeIfAbsent(userId, k -> new HashMap<>());
+        userMap.merge(productId, weight, Double::sum);
+        // 如果累加后权重 <= 0（如低分惩罚抵消了购买权重），移除该条目
+        if (userMap.getOrDefault(productId, 0.0) <= 0) {
+            userMap.remove(productId);
+        }
     }
 
     /**
@@ -892,13 +965,58 @@ public class FusionRecommendationService implements RecommendationStrategy {
         // 4. 判断是否热销（阈值可通过配置文件调整）
         profile.setIsHot(profile.getSalesCount() >= recommendationConfig.getHotSalesThreshold());
 
-        // 5. 加载适用地区和季节
-        loadProductRegionsAndSeasons(productId, profile);
+        // 5. 判断是否为种子类商品，按类型加载画像维度
+        boolean isSeed = isSeedProduct(product.getCategoryId());
+        profile.setIsSeed(isSeed);
 
-        // 6. 加载适用作物
-        loadProductCrops(productId, profile);
+        if (isSeed) {
+            // 种子：加载适用地域+季节
+            loadProductRegionsAndSeasons(productId, profile);
+        } else {
+            // 非种子（农药、肥料等）：加载适用作物
+            loadProductCrops(productId, profile);
+        }
 
         return profile;
+    }
+
+    /**
+     * 判断商品是否属于种子分类（一级分类ID=1为种子）
+     * <p>
+     * 商品可能挂在二级、三级或四级分类下，需要沿 parentId 向上追溯到一级分类
+     * </p>
+     */
+    private boolean isSeedProduct(Long categoryId) {
+        if (categoryId == null) {
+            return false;
+        }
+        Long topCategoryId = getTopLevelCategoryId(categoryId);
+        return topCategoryId != null && topCategoryId == 1L;
+    }
+
+    /**
+     * 获取一级分类ID（沿 parentId 向上追溯）
+     */
+    private Long getTopLevelCategoryId(Long categoryId) {
+        if (categoryId == null) {
+            return null;
+        }
+        Long currentId = categoryId;
+        int maxDepth = 10;
+        while (maxDepth-- > 0) {
+            Category category = categoryMapper.selectById(currentId);
+            if (category == null) {
+                return null;
+            }
+            if (category.getLevel() != null && category.getLevel() == 1) {
+                return category.getId();
+            }
+            if (category.getParentId() == null || category.getParentId() == 0L) {
+                return category.getId();
+            }
+            currentId = category.getParentId();
+        }
+        return null;
     }
 
     /**
@@ -1231,13 +1349,19 @@ public class FusionRecommendationService implements RecommendationStrategy {
             priceScore = recommendationConfig.getPriceNoMatchScore();
         }
 
-        // 3. 适用作物匹配（农资电商特有维度）
-        double cropScore = computeCropMatchScore(userProfile, productProfile);
+        // 3. 按商品类型计算第三维度
+        // 种子：地域+季节匹配；非种子（农药、肥料等）：适用作物匹配
+        double thirdDimensionScore;
+        if (Boolean.TRUE.equals(productProfile.getIsSeed())) {
+            thirdDimensionScore = computeRegionSeasonScore(userProfile, productProfile);
+        } else {
+            thirdDimensionScore = computeCropMatchScore(userProfile, productProfile);
+        }
 
         // 4. 加权融合（三维权重均可通过配置调整）
         return recommendationConfig.getCategoryWeight() * categoryScore
                 + recommendationConfig.getPriceWeight() * priceScore
-                + recommendationConfig.getCropWeight() * cropScore;
+                + recommendationConfig.getCropWeight() * thirdDimensionScore;
     }
 
     /**
@@ -1274,6 +1398,40 @@ public class FusionRecommendationService implements RecommendationStrategy {
         // 匹配得分：基础分 + 匹配比例 × 乘数（公式系数均可配置）
         return recommendationConfig.getCropBaseScore()
                 + matchRatio * recommendationConfig.getCropMatchMultiplier();
+    }
+
+    /**
+     * 计算地域+季节匹配得分（种子类商品专用）
+     * <p>
+     * 种子商品通过 product_region_season 关联地域和季节，
+     * 匹配用户所在地域和当前季节
+     * </p>
+     */
+    private double computeRegionSeasonScore(UserProfileDTO userProfile, ProductProfileDTO productProfile) {
+        double regionScore = 0.5;
+        double seasonScore = 0.5;
+
+        // 地域匹配
+        if (userProfile.getRegionId() != null && productProfile.getRegionIds() != null
+                && !productProfile.getRegionIds().isEmpty()) {
+            if (productProfile.getRegionIds().contains(userProfile.getRegionId())) {
+                regionScore = 1.0;
+            } else {
+                regionScore = 0.2;
+            }
+        }
+
+        // 季节匹配
+        String currentSeason = getCurrentSeason();
+        if (currentSeason != null && productProfile.getSeasonNames() != null
+                && !productProfile.getSeasonNames().isEmpty()) {
+            boolean match = productProfile.getSeasonNames().stream()
+                    .anyMatch(s -> "全年".equals(s) || s.contains(currentSeason));
+            seasonScore = match ? 1.0 : 0.2;
+        }
+
+        // 地域和季节各占50%
+        return 0.5 * regionScore + 0.5 * seasonScore;
     }
 
     /**

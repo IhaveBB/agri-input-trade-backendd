@@ -54,8 +54,10 @@ public interface ShopMapper {
     Integer getProductCount(@Param("merchantId") Long merchantId);
 
     /**
-     * 获取店铺总销量
+     * 获取店铺总销量（基于已完成订单）
      */
-    @Select("SELECT COALESCE(SUM(sales_count), 0) FROM product WHERE merchant_id = #{merchantId} AND deleted = 0")
+    @Select("SELECT COALESCE(SUM(o.quantity), 0) FROM `order` o " +
+            "JOIN product p ON o.product_id = p.id " +
+            "WHERE p.merchant_id = #{merchantId} AND o.status = 3")
     Integer getTotalSales(@Param("merchantId") Long merchantId);
 }
