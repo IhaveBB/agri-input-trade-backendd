@@ -131,18 +131,22 @@ public class StockWarningService {
     // ==================== 核心预警逻辑 ====================
 
     /**
-     * 获取所有库存预警信息（排除正常库存）
+     * 获取所有库存预警信息（排除正常库存），     * 支持按商户筛选
      *
+     * @param merchantId 商户ID（可为null，表示查看全平台）
      * @return 预警商品列表，按库存量升序排列
      * @author IhaveBB
-     * @date 2026/03/22
+     * @date 2026/03/29
      */
-    public List<StockWarningDTO> getAllStockWarnings() {
-        log.info("[库存预警] 查询所有库存预警信息");
+    public List<StockWarningDTO> getAllStockWarnings(Long merchantId) {
+        log.info("[库存预警] 查询库存预警信息, merchantId: {}", merchantId);
 
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Product::getStatus, 1)
-                .orderByAsc(Product::getStock);
+        wrapper.eq(Product::getStatus, 1);
+        if (merchantId != null) {
+            wrapper.eq(Product::getMerchantId, merchantId);
+        }
+        wrapper.orderByAsc(Product::getStock);
 
         List<Product> products = productMapper.selectList(wrapper);
 
@@ -236,11 +240,22 @@ public class StockWarningService {
      * @author IhaveBB
      * @date 2026/03/22
      */
-    public StockWarningOverview getStockOverview() {
+    /**
+     * 获取库存统计概览（各状态商品数量汇总）， 支持按商户筛选
+     *
+     * @param merchantId 商户ID（可为null， 表示全平台）
+     * @return 概览DTO, 包含总数、缺货数、低库存数"积压数"正常数
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    public StockWarningOverview getStockOverview(Long merchantId) {
         StockWarningOverview overview = new StockWarningOverview();
 
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Product::getStatus, 1);
+        if (merchantId != null) {
+            wrapper.eq(Product::getMerchantId, merchantId);
+        }
         List<Product> products = productMapper.selectList(wrapper);
 
         int lowThreshold = thresholdStrategy.getLowStockThreshold();

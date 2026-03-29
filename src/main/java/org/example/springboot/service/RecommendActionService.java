@@ -2,8 +2,10 @@ package org.example.springboot.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.annotation.Resource;
+import org.example.springboot.entity.Product;
 import org.example.springboot.entity.RecommendAction;
 import org.example.springboot.entity.dto.statistics.*;
+import org.example.springboot.mapper.ProductMapper;
 import org.example.springboot.mapper.RecommendActionMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * 推荐行为记录服务
@@ -78,6 +81,30 @@ public class RecommendActionService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RecommendActionService.class);
 
+    @Resource
+    private ProductMapper productMapper;
+
+    /**
+     * 获取商户的商品ID集合
+     *
+     * @param merchantId 商户ID（可为null）
+     * @return 商品ID集合， merchantId 为 null 时返回 null 表示不筛选
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    private Set<Long> getMerchantProductIds(Long merchantId) {
+        if (merchantId == null) {
+            return null;
+        }
+        LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Product::getStatus, 1)
+                .eq(Product::getMerchantId, merchantId)
+                .select(Product::getId);
+        List<Product> products = productMapper.selectList(wrapper);
+        return products.stream()
+                .map(Product::getId)
+                .collect(Collectors.toSet());
+    }
     @Resource
     private RecommendActionMapper recommendActionMapper;
 
@@ -201,26 +228,45 @@ public class RecommendActionService {
 
     /**
      * 获取推荐系统效果概览
-     * 作用：本月推荐效果的汇总指标，包括曝光数、点击数、购买数、CTR、CVR、环比增长率、覆盖用户数
-     * 用于：大屏首页的核心指标卡片展示
+     * 支持按商户维度筛选
+     *
+     * @param merchantId 商户ID（可为null，表示查询全平台）
+     * @return 推荐效果概览
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    public RecommendOverviewResponse getRecommendOverview() {
+    public RecommendOverviewResponse getRecommendOverview(Long merchantId) {
         RecommendOverviewResponse response = new RecommendOverviewResponse();
+        Set<Long> productIds = getMerchantProductIds(merchantId);
+
+        // 如果商户没有商品， 直接返回空数据
+        if (productIds != null && productIds.isEmpty()) {
+            response.setExposureCount(0L);
+            response.setClickCount(0L);
+            response.setBuyCount(0L);
+            response.setCtr("0.00%");
+            response.setCvr("0.00%");
+            response.setExposureGrowth("0.00%");
+            response.setClickGrowth("0.00%");
+            response.setBuyGrowth("0.00%");
+            response.setCoveredUsers(0L);
+            return response;
+        }
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime thisMonthStart = now.withDayOfMonth(1).toLocalDate().atStartOfDay();
 
         // 本月统计
-        long monthExposureCount = countActionByType(thisMonthStart, now, "EXPOSURE");
-        long monthClickCount = countActionByType(thisMonthStart, now, "CLICK");
-        long monthBuyCount = countActionByType(thisMonthStart, now, "BUY");
+        long monthExposureCount = countActionByType(thisMonthStart, now, "EXPOSURE", productIds);
+        long monthClickCount = countActionByType(thisMonthStart, now, "CLICK", productIds);
+        long monthBuyCount = countActionByType(thisMonthStart, now, "BUY", productIds);
 
-        // 上月同期统计（用于计算环比增长率，取上月同等天数）
+        // 上月同期统计
         LocalDateTime lastMonthStart = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
         LocalDateTime lastMonthSameDay = now.minusMonths(1).toLocalDate().atStartOfDay();
-        long lastMonthExposureCount = countActionByType(lastMonthStart, lastMonthSameDay, "EXPOSURE");
-        long lastMonthClickCount = countActionByType(lastMonthStart, lastMonthSameDay, "CLICK");
-        long lastMonthBuyCount = countActionByType(lastMonthStart, lastMonthSameDay, "BUY");
+        long lastMonthExposureCount = countActionByType(lastMonthStart, lastMonthSameDay, "EXPOSURE", productIds);
+        long lastMonthClickCount = countActionByType(lastMonthStart, lastMonthSameDay, "CLICK", productIds);
+        long lastMonthBuyCount = countActionByType(lastMonthStart, lastMonthSameDay, "BUY", productIds);
 
         // 计算关键指标
         double ctr = monthExposureCount > 0 ? (double) monthClickCount / monthExposureCount * 100 : 0;
@@ -241,7 +287,8 @@ public class RecommendActionService {
         response.setBuyGrowth(String.format("%.2f", buyGrowth) + "%");
 
         // 覆盖用户数
-        Long coveredUsers = recommendActionMapper.countDistinctUsers(thisMonthStart, now, null);
+        List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
+        Long coveredUsers = recommendActionMapper.countDistinctUsers(thisMonthStart, now, null, productIdList);
         response.setCoveredUsers(coveredUsers != null ? coveredUsers : 0L);
 
         return response;
@@ -256,10 +303,15 @@ public class RecommendActionService {
 
     /**
      * 获取推荐效果趋势
-     * 作用：按天统计推荐效果的变化趋势，返回近N天每天的曝光、点击、购买数量
-     * 用于：大屏图表-推荐效果趋势（折线图），支持7天/30天/90天等时间范围
+     * 支持按商户维度筛选
+     *
+     * @param days       统计天数
+     * @param merchantId 商户ID（可为null，表示查询全平台）
+     * @return 推荐效果趋势
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    public RecommendTrendResponse getRecommendTrend(Integer days) {
+    public RecommendTrendResponse getRecommendTrend(Integer days, Long merchantId) {
         RecommendTrendResponse response = new RecommendTrendResponse();
 
         if (days == null || days <= 0) {
@@ -269,8 +321,10 @@ public class RecommendActionService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime startTime = now.minusDays(days).withHour(0).withMinute(0).withSecond(0);
 
-        // 使用返回DTO的Mapper方法
-        List<RecommendTrendDTO> trendList = recommendActionMapper.selectTrendByDay(startTime, now, null);
+        Set<Long> productIds = getMerchantProductIds(merchantId);
+        List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
+
+        List<RecommendTrendDTO> trendList = recommendActionMapper.selectTrendByDay(startTime, now, null, productIdList);
 
         // 填充缺失的日期
         Map<String, RecommendTrendDTO> trendMap = trendList.stream()
@@ -311,17 +365,23 @@ public class RecommendActionService {
 
     /**
      * 获取分类推荐效果
-     * 作用：统计各商品分类的推荐效果，计算每个品类的曝光、点击、购买及CTR/CVR
-     * 用于：大屏图表-分类推荐效果（柱状图/饼图），分析哪些品类推荐效果好
+     * 支持按商户维度筛选
+     *
+     * @param merchantId 商户ID（可为null，表示查询全平台）
+     * @return 分类推荐效果
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    public RecommendCategoryEffectResponse getCategoryEffect() {
+    public RecommendCategoryEffectResponse getCategoryEffect(Long merchantId) {
         RecommendCategoryEffectResponse response = new RecommendCategoryEffectResponse();
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime startTime = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
 
-        // 使用返回DTO的Mapper方法
-        List<RecommendCategoryEffectDTO> categoryList = recommendActionMapper.selectCategoryEffect(startTime, now);
+        Set<Long> productIds = getMerchantProductIds(merchantId);
+        List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
+
+        List<RecommendCategoryEffectDTO> categoryList = recommendActionMapper.selectCategoryEffect(startTime, now, productIdList);
 
         // 计算各类别的转化率
         for (RecommendCategoryEffectDTO dto : categoryList) {
@@ -341,17 +401,23 @@ public class RecommendActionService {
 
     /**
      * 获取推荐算法构成
-     * 作用：统计各推荐来源（算法）的使用占比，分析推荐系统的算法构成
-     * 用于：大屏图表-推荐算法构成（饼图/环形图），展示协同过滤、热门推荐等算法占比
+     * 支持按商户维度筛选
+     *
+     * @param merchantId 商户ID（可为null，表示查询全平台）
+     * @return 推荐算法构成
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    public RecommendAlgorithmResponse getAlgorithmComposition() {
+    public RecommendAlgorithmResponse getAlgorithmComposition(Long merchantId) {
         RecommendAlgorithmResponse response = new RecommendAlgorithmResponse();
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime startTime = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
 
-        // 只统计推荐来源（排除自然流量）
-        List<Map<String, Object>> sourceStats = recommendActionMapper.countBySourceAndAction(startTime, now);
+        Set<Long> productIds = getMerchantProductIds(merchantId);
+        List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
+
+        List<Map<String, Object>> sourceStats = recommendActionMapper.countBySourceAndAction(startTime, now, productIdList);
 
         // 按来源分组
         Map<String, Long> sourceTotal = new HashMap<>();
@@ -381,17 +447,23 @@ public class RecommendActionService {
 
     /**
      * 获取推荐多样性指标（信息熵）
-     * 作用：计算推荐商品类目分布的信息熵，评估推荐结果的多样性程度（熵越高推荐越多样）
-     * 用于：大屏指标卡片-推荐多样性，提示是否需要增加推荐结果的丰富度
+     * 支持按商户维度筛选
+     *
+     * @param merchantId 商户ID（可为null，表示查询全平台）
+     * @return 推荐多样性指标
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    public RecommendDiversityDTO getRecommendationDiversity() {
+    public RecommendDiversityDTO getRecommendationDiversity(Long merchantId) {
         RecommendDiversityDTO response = new RecommendDiversityDTO();
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime startTime = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
 
-        // 查询所有推荐商品的分类分布
-        List<Map<String, Object>> categoryData = recommendActionMapper.countByCategory(startTime, now);
+        Set<Long> productIds = getMerchantProductIds(merchantId);
+        List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
+
+        List<Map<String, Object>> categoryData = recommendActionMapper.countByCategory(startTime, now, productIdList);
 
         if (categoryData == null || categoryData.isEmpty()) {
             response.setEntropy("0.00");
@@ -460,19 +532,25 @@ public class RecommendActionService {
 
     /**
      * 获取用户行为相似度分布
-     * 作用：分析推荐用户的行为深度转化漏斗（曝光→点击→加购/收藏→购买），统计各层级用户占比
-     * 用于：大屏图表-用户转化漏斗（漏斗图），分析推荐的用户转化效果
+     * 支持按商户维度筛选
+     *
+     * @param merchantId 商户ID（可为null，表示查询全平台）
+     * @return 用户行为相似度分布
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    public RecommendUserSimilarityDTO getUserSimilarityDistribution() {
+    public RecommendUserSimilarityDTO getUserSimilarityDistribution(Long merchantId) {
         RecommendUserSimilarityDTO result = new RecommendUserSimilarityDTO();
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime startTime = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
 
-        // 统计有点击行为的用户数量
-        Long usersWithClick = recommendActionMapper.countDistinctUsers(startTime, now, "CLICK");
-        Long usersWithBuy = recommendActionMapper.countDistinctUsers(startTime, now, "BUY");
-        Long totalUsers = recommendActionMapper.countDistinctUsers(startTime, now, null);
+        Set<Long> productIds = getMerchantProductIds(merchantId);
+        List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
+
+        Long usersWithClick = recommendActionMapper.countDistinctUsers(startTime, now, "CLICK", productIdList);
+        Long usersWithBuy = recommendActionMapper.countDistinctUsers(startTime, now, "BUY", productIdList);
+        Long totalUsers = recommendActionMapper.countDistinctUsers(startTime, now, null, productIdList);
 
         // 计算转化漏斗
         double clickRate = totalUsers > 0 ? (double) usersWithClick / totalUsers * 100 : 0;
@@ -488,22 +566,32 @@ public class RecommendActionService {
         result.setFunnel(funnel);
 
         // 行为深度分析
-        RecommendUserSimilarityDTO.DepthAnalysisDTO depthAnalysis = analyzeBehaviorDepthDTO(startTime, now);
+        RecommendUserSimilarityDTO.DepthAnalysisDTO depthAnalysis = analyzeBehaviorDepthDTO(startTime, now, productIds);
         result.setDepthAnalysis(depthAnalysis);
 
         return result;
     }
 
     /**
-     * 分析用户行为深度（返回DTO）
+     * 分析用户行为深度（返回DTO），支持按商品集合过滤
+     *
+     * @param startTime  开始时间
+     * @param endTime    结束时间
+     * @param productIds 商品ID集合（可为null）
+     * @return 行为深度分析DTO
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    private RecommendUserSimilarityDTO.DepthAnalysisDTO analyzeBehaviorDepthDTO(LocalDateTime startTime, LocalDateTime endTime) {
+    private RecommendUserSimilarityDTO.DepthAnalysisDTO analyzeBehaviorDepthDTO(LocalDateTime startTime, LocalDateTime endTime, Set<Long> productIds) {
         RecommendUserSimilarityDTO.DepthAnalysisDTO result = new RecommendUserSimilarityDTO.DepthAnalysisDTO();
 
         LambdaQueryWrapper<RecommendAction> wrapper = new LambdaQueryWrapper<>();
         wrapper.ge(RecommendAction::getCreatedAt, startTime)
                .lt(RecommendAction::getCreatedAt, endTime)
                .isNotNull(RecommendAction::getUserId);
+        if (productIds != null && !productIds.isEmpty()) {
+            wrapper.in(RecommendAction::getProductId, productIds);
+        }
 
         List<RecommendAction> actions = recommendActionMapper.selectList(wrapper);
 
@@ -556,17 +644,20 @@ public class RecommendActionService {
     }
 
     /**
-     * 生成智能优化建议
-     * 作用：基于转化率、多样性、数据量等指标，自动分析并生成优化建议和健康度评分
-     * 用于：大屏展示-智能优化建议面板，展示问题诊断和优化操作指引
+     * 生成智能优化建议， 支持按商户维度筛选
+     *
+     * @param merchantId 商户ID（可为null，表示查询全平台）
+     * @return 优化建议DTO
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    public RecommendOptimizationDTO getOptimizationSuggestions() {
+    public RecommendOptimizationDTO getOptimizationSuggestions(Long merchantId) {
         // 初始化规则引擎
         List<SuggestionRule> rules = buildRules();
         List<ScoreFactor> scoreFactors = buildScoreFactors();
 
         // 收集指标数据
-        Map<String, Object> metrics = collectMetrics();
+        Map<String, Object> metrics = collectMetrics(merchantId);
 
         // 执行规则生成建议
         List<Map<String, String>> suggestions = executeRules(rules, metrics);
@@ -633,13 +724,18 @@ public class RecommendActionService {
     }
 
     /**
-     * 收集指标数据
+     * 收集指标数据， 支持按商户维度
+     *
+     * @param merchantId 商户ID（可为null）
+     * @return 指标Map
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    private Map<String, Object> collectMetrics() {
+    private Map<String, Object> collectMetrics(Long merchantId) {
         Map<String, Object> metrics = new HashMap<>();
 
         // 转化率
-        RecommendOverviewResponse overview = getRecommendOverview();
+        RecommendOverviewResponse overview = getRecommendOverview(merchantId);
         double cvr = 0;
         if (overview.getCvr() != null) {
             try {
@@ -651,7 +747,7 @@ public class RecommendActionService {
         metrics.put("cvrValue", cvr);
 
         // 多样性
-        RecommendDiversityDTO diversity = getRecommendationDiversity();
+        RecommendDiversityDTO diversity = getRecommendationDiversity(merchantId);
         metrics.put("diversityLevel", diversity.getDiversityLevel());
 
         // 覆盖用户数
@@ -707,20 +803,27 @@ public class RecommendActionService {
     }
 
     /**
-     * 预测推荐效果（简单线性回归）
-     * 作用：基于近7天历史数据，使用线性回归预测下期的推荐转化率，并给出置信度和趋势判断
-     * 用于：大屏展示-效果预测卡片，预测未来推荐效果走势
+     * 预测推荐效果（简单线性回归），支持按商户维度筛选
+     *
+     * @param merchantId 商户ID（可为null， 表示查询全平台）
+     * @return 推荐效果预测
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    public RecommendPredictionDTO predictNextPeriodEffect() {
+    public RecommendPredictionDTO predictNextPeriodEffect(Long merchantId) {
         RecommendPredictionDTO result = new RecommendPredictionDTO();
 
         LocalDateTime now = LocalDateTime.now();
+
+        Set<Long> productIds = getMerchantProductIds(merchantId);
+        List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
 
         // 获取近7天数据
         List<Map<String, Object>> weeklyData = recommendActionMapper.countTrendByDay(
                 now.minusDays(7).withHour(0).withMinute(0),
                 now,
-                null
+                null,
+                productIdList
         );
 
         if (weeklyData == null || weeklyData.size() < DefaultParams.MIN_DATA_POINTS) {
@@ -787,11 +890,14 @@ public class RecommendActionService {
         return result;
     }
 
-    private long countActionByType(LocalDateTime startTime, LocalDateTime endTime, String actionType) {
+    private long countActionByType(LocalDateTime startTime, LocalDateTime endTime, String actionType, Set<Long> productIds) {
         LambdaQueryWrapper<RecommendAction> wrapper = new LambdaQueryWrapper<>();
         wrapper.ge(RecommendAction::getCreatedAt, startTime)
                .lt(RecommendAction::getCreatedAt, endTime)
                .eq(RecommendAction::getActionType, actionType);
+        if (productIds != null && !productIds.isEmpty()) {
+            wrapper.in(RecommendAction::getProductId, productIds);
+        }
         return recommendActionMapper.selectCount(wrapper);
     }
 

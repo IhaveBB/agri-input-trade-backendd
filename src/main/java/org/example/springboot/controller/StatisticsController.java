@@ -242,121 +242,139 @@ public class StatisticsController {
     /**
      * 获取推荐系统效果概览
      *
+     * @param merchantId 商户ID（可为null，管理员场景）
      * @return 推荐系统效果概览数据
      * @author IhaveBB
      * @date 2026/03/22
      */
     @Operation(summary = "获取推荐系统效果概览")
     @GetMapping("/recommend/overview")
-    public Result<RecommendOverviewResponse> getRecommendOverview() {
-        LOGGER.info("获取推荐系统效果概览");
-        RecommendOverviewResponse response = recommendActionService.getRecommendOverview();
+    public Result<RecommendOverviewResponse> getRecommendOverview(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取推荐系统效果概览，merchantId: {}", finalMerchantId);
+        RecommendOverviewResponse response = recommendActionService.getRecommendOverview(finalMerchantId);
         return Result.success(response);
     }
 
     /**
      * 获取推荐效果趋势
      *
-     * @param days 统计天数，默认30天
+     * @param days       统计天数，默认30天
+     * @param merchantId 商户ID（可为null，管理员场景）
      * @return 推荐效果趋势数据
      * @author IhaveBB
      * @date 2026/03/22
      */
     @Operation(summary = "获取推荐效果趋势")
     @GetMapping("/recommend/trend")
-    public Result<RecommendTrendResponse> getRecommendTrend(@RequestParam(defaultValue = "30") Integer days) {
-        LOGGER.info("获取推荐效果趋势，days: {}", days);
-        RecommendTrendResponse response = recommendActionService.getRecommendTrend(days);
+    public Result<RecommendTrendResponse> getRecommendTrend(
+            @RequestParam(defaultValue = "30") Integer days,
+            @RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取推荐效果趋势，days: {}, merchantId: {}", days, finalMerchantId);
+        RecommendTrendResponse response = recommendActionService.getRecommendTrend(days, finalMerchantId);
         return Result.success(response);
     }
 
     /**
      * 获取分类推荐效果
      *
+     * @param merchantId 商户ID（可为null，管理员场景）
      * @return 分类推荐效果数据
      * @author IhaveBB
      * @date 2026/03/22
      */
     @Operation(summary = "获取分类推荐效果")
     @GetMapping("/recommend/category-effect")
-    public Result<RecommendCategoryEffectResponse> getCategoryEffect() {
-        LOGGER.info("获取分类推荐效果");
-        RecommendCategoryEffectResponse response = recommendActionService.getCategoryEffect();
+    public Result<RecommendCategoryEffectResponse> getCategoryEffect(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取分类推荐效果，merchantId: {}", finalMerchantId);
+        RecommendCategoryEffectResponse response = recommendActionService.getCategoryEffect(finalMerchantId);
         return Result.success(response);
     }
 
     /**
      * 获取推荐算法构成分析
      *
+     * @param merchantId 商户ID（可为null，管理员场景）
      * @return 推荐算法构成数据
      * @author IhaveBB
      * @date 2026/03/22
      */
     @Operation(summary = "获取推荐算法构成")
     @GetMapping("/recommend/algorithm-composition")
-    public Result<RecommendAlgorithmResponse> getAlgorithmComposition() {
-        LOGGER.info("获取推荐算法构成");
-        RecommendAlgorithmResponse response = recommendActionService.getAlgorithmComposition();
+    public Result<RecommendAlgorithmResponse> getAlgorithmComposition(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取推荐算法构成，merchantId: {}", finalMerchantId);
+        RecommendAlgorithmResponse response = recommendActionService.getAlgorithmComposition(finalMerchantId);
         return Result.success(response);
     }
 
     /**
      * 获取推荐多样性指标（信息熵）
      *
+     * @param merchantId 商户ID（可为null，管理员场景）
      * @return 推荐多样性指标数据
      * @author IhaveBB
      * @date 2026/03/22
      */
     @Operation(summary = "获取推荐多样性指标（信息熵）")
     @GetMapping("/recommend/diversity")
-    public Result<RecommendDiversityDTO> getRecommendationDiversity() {
-        LOGGER.info("获取推荐多样性指标");
-        RecommendDiversityDTO response = recommendActionService.getRecommendationDiversity();
+    public Result<RecommendDiversityDTO> getRecommendationDiversity(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取推荐多样性指标，merchantId: {}", finalMerchantId);
+        RecommendDiversityDTO response = recommendActionService.getRecommendationDiversity(finalMerchantId);
         return Result.success(response);
     }
 
     /**
      * 获取用户行为相似度分布
      *
+     * @param merchantId 商户ID（可为null，管理员场景）
      * @return 用户行为相似度分布数据
      * @author IhaveBB
      * @date 2026/03/22
      */
     @Operation(summary = "获取用户行为相似度分布")
     @GetMapping("/recommend/user-similarity")
-    public Result<RecommendUserSimilarityDTO> getUserSimilarityDistribution() {
-        LOGGER.info("获取用户行为相似度分布");
-        RecommendUserSimilarityDTO response = recommendActionService.getUserSimilarityDistribution();
+    public Result<RecommendUserSimilarityDTO> getUserSimilarityDistribution(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取用户行为相似度分布，merchantId: {}", finalMerchantId);
+        RecommendUserSimilarityDTO response = recommendActionService.getUserSimilarityDistribution(finalMerchantId);
         return Result.success(response);
     }
 
     /**
      * 获取智能优化建议
      *
+     * @param merchantId 商户ID（可为null，管理员场景）
      * @return 推荐系统智能优化建议
      * @author IhaveBB
      * @date 2026/03/22
      */
     @Operation(summary = "获取智能优化建议")
     @GetMapping("/recommend/suggestions")
-    public Result<RecommendOptimizationDTO> getOptimizationSuggestions() {
-        LOGGER.info("获取智能优化建议");
-        RecommendOptimizationDTO response = recommendActionService.getOptimizationSuggestions();
+    public Result<RecommendOptimizationDTO> getOptimizationSuggestions(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("获取智能优化建议，merchantId: {}", finalMerchantId);
+        RecommendOptimizationDTO response = recommendActionService.getOptimizationSuggestions(finalMerchantId);
         return Result.success(response);
     }
 
     /**
      * 预测下期推荐效果
      *
+     * @param merchantId 商户ID（可为null，管理员场景）
      * @return 下期推荐效果预测数据
      * @author IhaveBB
      * @date 2026/03/22
      */
     @Operation(summary = "预测下期推荐效果")
     @GetMapping("/recommend/prediction")
-    public Result<RecommendPredictionDTO> predictNextPeriodEffect() {
-        LOGGER.info("预测下期推荐效果");
-        RecommendPredictionDTO response = recommendActionService.predictNextPeriodEffect();
+    public Result<RecommendPredictionDTO> predictNextPeriodEffect(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        LOGGER.info("预测下期推荐效果，merchantId: {}", finalMerchantId);
+        RecommendPredictionDTO response = recommendActionService.predictNextPeriodEffect(finalMerchantId);
         return Result.success(response);
     }
 }

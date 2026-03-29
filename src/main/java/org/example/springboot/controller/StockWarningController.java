@@ -33,15 +33,19 @@ public class StockWarningController {
     private final StockWarningService stockWarningService;
 
     /**
-     * 获取所有库存预警（管理员）
+     * 获取所有库存预警（管理员， 支持按商户筛选）
      *
+     * @param merchantId 商户ID（可为null，管理员场景）
      * @return 预警信息列表
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    @Operation(summary = "获取所有库存预警", description = "管理员查看所有商品的库存预警信息")
+    @Operation(summary = "获取所有库存预警", description = "管理员查看所有商品的库存预警信息，支持按商户筛选")
     @GetMapping("/all")
-    public Result<List<StockWarningDTO>> getAllStockWarnings() {
-        log.info("[库存预警接口] 查询所有库存预警");
-        List<StockWarningDTO> warnings = stockWarningService.getAllStockWarnings();
+    public Result<List<StockWarningDTO>> getAllStockWarnings(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        log.info("[库存预警接口] 查询库存预警， merchantId: {}", finalMerchantId);
+        List<StockWarningDTO> warnings = stockWarningService.getAllStockWarnings(finalMerchantId);
         return Result.success(warnings);
     }
 
@@ -74,15 +78,19 @@ public class StockWarningController {
     }
 
     /**
-     * 获取库存统计概览
+     * 获取库存统计概览（支持按商户筛选）
      *
+     * @param merchantId 商户ID（可为null，管理员场景）
      * @return 统计信息
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    @Operation(summary = "库存概览", description = "获取库存状态统计概览")
+    @Operation(summary = "库存概览", description = "获取库存状态统计概览, 支持按商户筛选")
     @GetMapping("/overview")
-    public Result<StockWarningOverview> getStockOverview() {
-        log.info("[库存预警接口] 查询库存概览");
-        StockWarningOverview overview = stockWarningService.getStockOverview();
+    public Result<StockWarningOverview> getStockOverview(@RequestParam(required = false) Long merchantId) {
+        Long finalMerchantId = UserContext.getMerchantId(merchantId);
+        log.info("[库存预警接口] 查询库存概览, merchantId: {}", finalMerchantId);
+        StockWarningOverview overview = stockWarningService.getStockOverview(finalMerchantId);
         return Result.success(overview);
     }
 
