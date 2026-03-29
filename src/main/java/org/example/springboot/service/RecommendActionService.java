@@ -287,7 +287,7 @@ public class RecommendActionService {
         response.setBuyGrowth(String.format("%.2f", buyGrowth) + "%");
 
         // 覆盖用户数
-        List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
+        List<Long> productIdList = productIds != null && !productIds.isEmpty() ? new ArrayList<>(productIds) : null;
         Long coveredUsers = recommendActionMapper.countDistinctUsers(thisMonthStart, now, null, productIdList);
         response.setCoveredUsers(coveredUsers != null ? coveredUsers : 0L);
 
@@ -322,6 +322,15 @@ public class RecommendActionService {
         LocalDateTime startTime = now.minusDays(days).withHour(0).withMinute(0).withSecond(0);
 
         Set<Long> productIds = getMerchantProductIds(merchantId);
+        // 商户没有商品时返回空趋势数据
+        if (productIds != null && productIds.isEmpty()) {
+            response.setDays(days);
+            response.setTrend(new ArrayList<>());
+            response.setTotalExposure(0L);
+            response.setTotalClick(0L);
+            response.setTotalBuy(0L);
+            return response;
+        }
         List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
 
         List<RecommendTrendDTO> trendList = recommendActionMapper.selectTrendByDay(startTime, now, null, productIdList);
@@ -379,6 +388,12 @@ public class RecommendActionService {
         LocalDateTime startTime = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
 
         Set<Long> productIds = getMerchantProductIds(merchantId);
+        // 商户没有商品时返回空数据
+        if (productIds != null && productIds.isEmpty()) {
+            response.setCategoryEffect(new ArrayList<>());
+            response.setTotalCategories(0);
+            return response;
+        }
         List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
 
         List<RecommendCategoryEffectDTO> categoryList = recommendActionMapper.selectCategoryEffect(startTime, now, productIdList);
@@ -415,6 +430,12 @@ public class RecommendActionService {
         LocalDateTime startTime = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
 
         Set<Long> productIds = getMerchantProductIds(merchantId);
+        // 商户没有商品时返回空数据
+        if (productIds != null && productIds.isEmpty()) {
+            response.setComposition(new HashMap<>());
+            response.setTotal(0L);
+            return response;
+        }
         List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
 
         List<Map<String, Object>> sourceStats = recommendActionMapper.countBySourceAndAction(startTime, now, productIdList);
@@ -461,6 +482,13 @@ public class RecommendActionService {
         LocalDateTime startTime = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
 
         Set<Long> productIds = getMerchantProductIds(merchantId);
+        // 商户没有商品时返回空数据
+        if (productIds != null && productIds.isEmpty()) {
+            response.setEntropy("0.00");
+            response.setDiversityLevel("无数据");
+            response.setCategoryDistribution(new HashMap<>());
+            return response;
+        }
         List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
 
         List<Map<String, Object>> categoryData = recommendActionMapper.countByCategory(startTime, now, productIdList);
@@ -546,6 +574,12 @@ public class RecommendActionService {
         LocalDateTime startTime = now.minusMonths(1).withDayOfMonth(1).toLocalDate().atStartOfDay();
 
         Set<Long> productIds = getMerchantProductIds(merchantId);
+        // 商户没有商品时返回空数据
+        if (productIds != null && productIds.isEmpty()) {
+            result.setFunnel(new RecommendUserSimilarityDTO.FunnelDTO());
+            result.setDepthAnalysis(new RecommendUserSimilarityDTO.DepthAnalysisDTO());
+            return result;
+        }
         List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
 
         Long usersWithClick = recommendActionMapper.countDistinctUsers(startTime, now, "CLICK", productIdList);
@@ -816,6 +850,13 @@ public class RecommendActionService {
         LocalDateTime now = LocalDateTime.now();
 
         Set<Long> productIds = getMerchantProductIds(merchantId);
+        // 商户没有商品时返回空预测
+        if (productIds != null && productIds.isEmpty()) {
+            result.setPredictedCVR("商户暂无商品数据");
+            result.setConfidence("低");
+            result.setWeeklyData(new ArrayList<>());
+            return result;
+        }
         List<Long> productIdList = productIds != null ? new ArrayList<>(productIds) : null;
 
         // 获取近7天数据

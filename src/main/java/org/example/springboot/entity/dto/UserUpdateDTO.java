@@ -25,8 +25,11 @@ public class UserUpdateDTO {
     @Schema(description = "位置信息")
     private String location;
 
-    @Schema(description = "感兴趣作物/动物分类ID列表，逗号分隔")
+    @Schema(description = "感兴趣作物分类ID列表，逗号分隔")
     private String interestedCrops;
+
+    @Schema(description = "感兴趣动物分类ID列表，逗号分隔")
+    private String interestedAnimals;
 
     @Schema(description = "账号状态（仅管理员可修改）")
     private Integer status;

@@ -299,6 +299,45 @@ public class CategoryDataInitializer implements CommandLineRunner {
         Category pumpkin = createCategory(id++, "南瓜", gourd.getId(), 4, 3, 0, 0);
         categories.add(pumpkin);
 
+        // ===== 一级分类 - 畜禽（动物分类，用于饲料/兽药的适用动物选择） =====
+        Category animal = createCategory(id++, "畜禽", 0L, 1, 8, 0, 0);
+        categories.add(animal);
+
+        // ===== 二级分类 - 畜禽 =====
+        Category animalLivestock = createCategory(id++, "家畜", animal.getId(), 2, 1, 0, 0);
+        categories.add(animalLivestock);
+        Category animalPoultry = createCategory(id++, "家禽", animal.getId(), 2, 2, 0, 0);
+        categories.add(animalPoultry);
+        Category animalAquatic = createCategory(id++, "水产", animal.getId(), 2, 3, 0, 0);
+        categories.add(animalAquatic);
+        Category animalOther = createCategory(id++, "其他", animal.getId(), 2, 4, 0, 0);
+        categories.add(animalOther);
+
+        // ===== 三级分类 - 畜禽 -> 家畜 =====
+        categories.add(createCategory(id++, "猪", animalLivestock.getId(), 3, 1, 0, 0));
+        categories.add(createCategory(id++, "黄牛", animalLivestock.getId(), 3, 2, 0, 0));
+        categories.add(createCategory(id++, "奶牛", animalLivestock.getId(), 3, 3, 0, 0));
+        categories.add(createCategory(id++, "山羊", animalLivestock.getId(), 3, 4, 0, 0));
+        categories.add(createCategory(id++, "绵羊", animalLivestock.getId(), 3, 5, 0, 0));
+        categories.add(createCategory(id++, "马", animalLivestock.getId(), 3, 6, 0, 0));
+        categories.add(createCategory(id++, "驴", animalLivestock.getId(), 3, 7, 0, 0));
+        categories.add(createCategory(id++, "兔", animalLivestock.getId(), 3, 8, 0, 0));
+
+        // ===== 三级分类 - 畜禽 -> 家禽 =====
+        categories.add(createCategory(id++, "鸡", animalPoultry.getId(), 3, 1, 0, 0));
+        categories.add(createCategory(id++, "鸭", animalPoultry.getId(), 3, 2, 0, 0));
+        categories.add(createCategory(id++, "鹅", animalPoultry.getId(), 3, 3, 0, 0));
+        categories.add(createCategory(id++, "鸽子", animalPoultry.getId(), 3, 4, 0, 0));
+
+        // ===== 三级分类 - 畜禽 -> 水产 =====
+        categories.add(createCategory(id++, "淡水鱼", animalAquatic.getId(), 3, 1, 0, 0));
+        categories.add(createCategory(id++, "虾", animalAquatic.getId(), 3, 2, 0, 0));
+        categories.add(createCategory(id++, "蟹", animalAquatic.getId(), 3, 3, 0, 0));
+
+        // ===== 三级分类 - 畜禽 -> 其他 =====
+        categories.add(createCategory(id++, "蜜蜂", animalOther.getId(), 3, 1, 0, 0));
+        categories.add(createCategory(id++, "鹿", animalOther.getId(), 3, 2, 0, 0));
+
         return categories;
     }
 

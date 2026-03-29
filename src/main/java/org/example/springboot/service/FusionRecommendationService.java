@@ -72,6 +72,9 @@ public class FusionRecommendationService implements RecommendationStrategy {
     private ProductCropMapper productCropMapper;
 
     @Resource
+    private ProductAnimalMapper productAnimalMapper;
+
+    @Resource
     private RecommendActionService recommendActionService;
 
     @Resource
@@ -423,7 +426,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
     }
 
     /**
-     * 实际执行交互矩阵重建（已在 synchronized 块内，线程安全）
+     * 实际执行交互矩阵重建
      */
     private void doRefreshInteractionMatrix() {
         log.info("[交互矩阵] 开始构建用户-商品交互矩阵（整合浏览/收藏/加购/购买/评分 5 类行为）...");
@@ -733,6 +736,9 @@ public class FusionRecommendationService implements RecommendationStrategy {
         // 4. 计算偏好作物（从注册信息 + 购买历史）
         computeUserPreferredCrops(userId, profile, user);
 
+        // 5. 计算偏好动物（从注册信息）
+        computeUserPreferredAnimals(profile, user);
+
         return profile;
     }
 
@@ -918,6 +924,42 @@ public class FusionRecommendationService implements RecommendationStrategy {
     }
 
     /**
+     * 计算用户偏好动物（从注册信息）
+     *
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    private void computeUserPreferredAnimals(UserProfileDTO profile, User user) {
+        if (user == null || user.getInterestedAnimals() == null
+                || user.getInterestedAnimals().isEmpty()) {
+            profile.setPreferredAnimalIds(new ArrayList<>());
+            profile.setPreferredAnimalNames(new ArrayList<>());
+            return;
+        }
+
+        List<Long> animalIds = new ArrayList<>();
+        String[] parts = user.getInterestedAnimals().split(",");
+        for (String part : parts) {
+            try {
+                animalIds.add(Long.parseLong(part.trim()));
+            } catch (NumberFormatException e) {
+                log.warn("[用户画像] 解析感兴趣动物ID失败: {}", part);
+            }
+        }
+        profile.setPreferredAnimalIds(animalIds);
+
+        // 加载动物名称
+        List<String> animalNames = new ArrayList<>();
+        if (!animalIds.isEmpty()) {
+            LambdaQueryWrapper<Category> wrapper = new LambdaQueryWrapper<>();
+            wrapper.in(Category::getId, animalIds);
+            List<Category> categories = categoryMapper.selectList(wrapper);
+            animalNames = categories.stream().map(Category::getName).collect(Collectors.toList());
+        }
+        profile.setPreferredAnimalNames(animalNames);
+    }
+
+    /**
      * 构建商品画像
      * <p>
      * 商品画像包含：
@@ -969,9 +1011,16 @@ public class FusionRecommendationService implements RecommendationStrategy {
         boolean isSeed = isSeedProduct(product.getCategoryId());
         profile.setIsSeed(isSeed);
 
+        // 记录一级分类 ID，用于打分时按类型分支
+        Long topCategoryId = getTopLevelCategoryId(product.getCategoryId());
+        profile.setTopCategoryId(topCategoryId);
+
         if (isSeed) {
             // 种子：加载适用地域+季节
             loadProductRegionsAndSeasons(productId, profile);
+        } else if (topCategoryId != null && (topCategoryId == 4L || topCategoryId == 5L)) {
+            // 饲料(ID=4)、兽药(ID=5)：加载适用动物
+            loadProductAnimals(productId, profile);
         } else {
             // 非种子（农药、肥料等）：加载适用作物
             loadProductCrops(productId, profile);
@@ -1101,6 +1150,42 @@ public class FusionRecommendationService implements RecommendationStrategy {
             cropNames = categories.stream().map(Category::getName).collect(Collectors.toList());
         }
         profile.setCropNames(cropNames);
+    }
+
+    /**
+     * 加载商品适用的动物
+     *
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    private void loadProductAnimals(Long productId, ProductProfileDTO profile) {
+        LambdaQueryWrapper<ProductAnimal> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(ProductAnimal::getProductId, productId);
+        List<ProductAnimal> associations = productAnimalMapper.selectList(wrapper);
+
+        if (associations.isEmpty()) {
+            profile.setAnimalIds(new ArrayList<>());
+            profile.setAnimalNames(new ArrayList<>());
+            return;
+        }
+
+        List<Long> animalIds = associations.stream()
+                .map(ProductAnimal::getCategoryId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+
+        profile.setAnimalIds(animalIds);
+
+        // 加载动物名称（从category表畜禽子树）
+        List<String> animalNames = new ArrayList<>();
+        if (!animalIds.isEmpty()) {
+            LambdaQueryWrapper<Category> categoryWrapper = new LambdaQueryWrapper<>();
+            categoryWrapper.in(Category::getId, animalIds);
+            List<Category> categories = categoryMapper.selectList(categoryWrapper);
+            animalNames = categories.stream().map(Category::getName).collect(Collectors.toList());
+        }
+        profile.setAnimalNames(animalNames);
     }
 
     /**
@@ -1253,66 +1338,82 @@ public class FusionRecommendationService implements RecommendationStrategy {
     private double computeProfileScore(UserProfileDTO userProfile,
                                         ProductProfileDTO productProfile,
                                         String currentSeason) {
-        // 1. 业务规则约束检查
-        if (!checkBusinessRules(userProfile, productProfile, currentSeason)) {
-            return 0.0; // 不满足约束，直接返回 0
-        }
-
-        // 2. 构建特征向量并计算余弦相似度
-        return computeProfileCosineSimilarity(userProfile, productProfile);
+        // 直接计算画像匹配得分（不再使用硬约束过滤）
+        return computeProfileMatchScore(userProfile, productProfile, currentSeason);
     }
 
     /**
      * 检查业务规则约束
      */
+    /**
+     * 计算画像匹配得分
+     * <p>
+     * 根据商品一级分类采用不同打分策略：
+     * - 种子(ID=1)：0.6 × 区域匹配 + 0.4 × 季节匹配
+     * - 农药(ID=2)、肥料(ID=3)：作物匹配（有交集=1.0，无交集=0.0）
+     * - 饲料(ID=4)、兽药(ID=5)：动物匹配（有交集=1.0，无交集=0.0）
+     * - 农膜(ID=6)、农机(ID=7)：中性分 0.5
+     * 信息不全时各维度给 0.5（中性分）
+     * </p>
+     *
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    private double computeProfileMatchScore(UserProfileDTO userProfile,
+                                             ProductProfileDTO productProfile,
+                                             String currentSeason) {
+        Long topCategoryId = productProfile.getTopCategoryId();
+
+        if (topCategoryId == null) {
+            return 0.5; // 无法判断类型，中性分
+        }
+
+        switch (topCategoryId.intValue()) {
+            case 1: // 种子
+                return computeSeedRegionSeasonScore(userProfile, productProfile, currentSeason);
+            case 2: // 农药
+            case 3: // 肥料
+                return computeCropMatchScore(userProfile, productProfile);
+            case 4: // 饲料
+            case 5: // 兽药
+                return computeAnimalMatchScore(userProfile, productProfile);
+            default: // 农膜(6)、农机(7)等
+                return 0.5;
+        }
+    }
+
+    // ==================== [已注释] 原始三维画像打分 ====================
+    // 品类偏好和价格区间两个维度已按需求注释掉，只保留第三维度作为唯一打分依据。
+    // 以下为原始代码，保留备查。
+
+    /*
     private boolean checkBusinessRules(UserProfileDTO userProfile,
                                         ProductProfileDTO productProfile,
                                         String currentSeason) {
         // 地区约束
         if (recommendationConfig.getEnableRegionConstraint()) {
             if (userProfile.getRegionId() != null && !productProfile.getRegionIds().isEmpty()) {
-                // 用户有地区偏好，商品也有地区限制
                 if (!productProfile.getRegionIds().contains(userProfile.getRegionId())) {
-                    // 商品不适配用户所在地区
-                    log.debug("[业务规则] 商品{}不适配用户地区{}",
-                            productProfile.getProductId(), userProfile.getRegionName());
                     return false;
                 }
             }
         }
-
         // 季节约束
         if (recommendationConfig.getEnableSeasonConstraint()) {
             if (!productProfile.getSeasonIds().isEmpty()) {
-                // 商品有季节限制，检查是否匹配当前季节或适用全年
-                // BUG FIX："全年"商品应在任何季节均可推荐，不能被过滤
                 boolean seasonMatch = productProfile.getSeasonNames().stream()
                         .anyMatch(s -> "全年".equals(s) || s.contains(currentSeason));
                 if (!seasonMatch) {
-                    log.debug("[业务规则] 商品{}不适配当前季节{}（适用季节：{}）",
-                            productProfile.getProductId(), currentSeason,
-                            productProfile.getSeasonNames());
                     return false;
                 }
             }
         }
-
         return true;
     }
 
-    /**
-     * 计算画像余弦相似度
-     * <p>
-     * 特征向量包括：
-     * - 品类偏好匹配
-     * - 价格区间匹配
-     * - 消费能力匹配
-     * - 适用作物匹配（农资电商特有）
-     * </p>
-     */
     private double computeProfileCosineSimilarity(UserProfileDTO userProfile,
                                                    ProductProfileDTO productProfile) {
-        // 1. 品类偏好匹配
+        // [已注释] 品类偏好匹配维度
         double categoryScore = 0.0;
         if (userProfile.getCategoryPreferences() != null
                 && !userProfile.getCategoryPreferences().isEmpty()) {
@@ -1326,31 +1427,25 @@ public class FusionRecommendationService implements RecommendationStrategy {
             categoryScore = 0.5;
         }
 
-        // 2. 价格区间匹配（匹配分数由配置控制）
-        double priceScore = 0.5; // 默认中性得分（无法判断消费能力时）
+        // [已注释] 价格区间匹配维度
+        double priceScore = 0.5;
         String consumptionLevel = userProfile.getConsumptionLevel();
         String priceRange = productProfile.getPriceRange();
-
         if (consumptionLevel == null || priceRange == null) {
-            // 无消费能力或价格区间信息，使用中性得分
             priceScore = 0.5;
         } else if (consumptionLevel.equals(priceRange)) {
             priceScore = 1.0;
         } else if (("HIGH".equals(consumptionLevel) && "MEDIUM".equals(priceRange))
                 || ("MEDIUM".equals(consumptionLevel) && "LOW".equals(priceRange))) {
-            // 邻档匹配（消费力高于商品价位一档，可以接受）
             priceScore = recommendationConfig.getPriceNearMatchScore();
         } else if (("LOW".equals(consumptionLevel) && "MEDIUM".equals(priceRange))
                 || ("MEDIUM".equals(consumptionLevel) && "HIGH".equals(priceRange))) {
-            // 跨档匹配（商品价位高于消费力，推荐意义较低）
             priceScore = recommendationConfig.getPriceFarMatchScore();
         } else {
-            // 极端不匹配（HIGH 用户 → LOW 商品，或 LOW 用户 → HIGH 商品）
             priceScore = recommendationConfig.getPriceNoMatchScore();
         }
 
-        // 3. 按商品类型计算第三维度
-        // 种子：地域+季节匹配；非种子（农药、肥料等）：适用作物匹配
+        // 第三维度
         double thirdDimensionScore;
         if (Boolean.TRUE.equals(productProfile.getIsSeed())) {
             thirdDimensionScore = computeRegionSeasonScore(userProfile, productProfile);
@@ -1358,80 +1453,120 @@ public class FusionRecommendationService implements RecommendationStrategy {
             thirdDimensionScore = computeCropMatchScore(userProfile, productProfile);
         }
 
-        // 4. 加权融合（三维权重均可通过配置调整）
         return recommendationConfig.getCategoryWeight() * categoryScore
                 + recommendationConfig.getPriceWeight() * priceScore
                 + recommendationConfig.getCropWeight() * thirdDimensionScore;
     }
+    */
 
     /**
-     * 计算适用作物匹配得分
+     * 种子类商品：区域 + 季节加权打分
      * <p>
-     * 基于用户偏好作物与商品适用作物的交集计算匹配度
-     * 计算公式：|A ∩ B| / |A|，其中A为用户偏好作物集合，B为商品适用作物集合
+     * 公式：0.6 × 区域匹配 + 0.4 × 季节匹配
+     * 区域匹配：用户大区在商品适用区域内（含全国=8）→ 1.0，否则 0.0
+     * 季节匹配：当前季节在商品适用季节内（含全年=5）→ 1.0，否则 0.0
+     * 信息不全时对应维度给 0.5（中性分）
      * </p>
+     *
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    private double computeSeedRegionSeasonScore(UserProfileDTO userProfile,
+                                                 ProductProfileDTO productProfile,
+                                                 String currentSeason) {
+        List<Long> regionIds = productProfile.getRegionIds();
+        List<Long> seasonIds = productProfile.getSeasonIds();
+
+        // 区域维度得分
+        double regionScore;
+        if (regionIds == null || regionIds.isEmpty() || userProfile.getRegionId() == null) {
+            regionScore = 0.5; // 信息不全，中性分
+        } else {
+            boolean regionMatch = regionIds.contains(userProfile.getRegionId())
+                    || regionIds.contains(8L); // 全国
+            regionScore = regionMatch ? 1.0 : 0.0;
+        }
+
+        // 季节维度得分
+        double seasonScore;
+        if (seasonIds == null || seasonIds.isEmpty()) {
+            seasonScore = 0.5; // 无季节配置，中性分
+        } else {
+            Long currentSeasonId = getCurrentSeasonId();
+            boolean seasonMatch = seasonIds.contains(5L) // 全年
+                    || (currentSeasonId != null && seasonIds.contains(currentSeasonId));
+            seasonScore = seasonMatch ? 1.0 : 0.0;
+        }
+
+        // 加权求和：0.6 × 区域 + 0.4 × 季节
+        return 0.6 * regionScore + 0.4 * seasonScore;
+    }
+
+    /**
+     * 获取当前季节ID
+     *
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    private Long getCurrentSeasonId() {
+        String seasonName = getCurrentSeason();
+        if (seasonName == null) {
+            return null;
+        }
+        LambdaQueryWrapper<Season> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Season::getName, seasonName);
+        Season season = seasonMapper.selectOne(wrapper);
+        return season != null ? season.getId() : null;
+    }
+
+    /**
+     * 计算适用作物匹配得分（农药、肥料类商品）
+     * <p>
+     * 二元打分：有交集 → 1.0，无交集 → 0.0，信息不全 → 0.5
+     * </p>
+     *
+     * @author IhaveBB
+     * @date 2026/03/29
      */
     private double computeCropMatchScore(UserProfileDTO userProfile, ProductProfileDTO productProfile) {
         List<Long> userCrops = userProfile.getPreferredCropIds();
         List<Long> productCrops = productProfile.getCropIds();
 
-        // 用户无偏好或商品无适用作物，返回中性得分
         if (userCrops == null || userCrops.isEmpty()) {
-            return 0.5;
+            return 0.5; // 用户无作物偏好，中性分
         }
         if (productCrops == null || productCrops.isEmpty()) {
-            return 0.5; // 通用商品，不给惩罚
+            return 0.5; // 商品无适用作物信息，中性分
         }
 
-        // 计算交集
-        long matchCount = userCrops.stream()
-                .filter(productCrops::contains)
-                .count();
-
-        if (matchCount == 0) {
-            return recommendationConfig.getCropNoMatchScore(); // 完全不匹配，低分但不完全排除
-        }
-
-        // 匹配比例：交集 / 用户偏好作物数
-        double matchRatio = (double) matchCount / userCrops.size();
-
-        // 匹配得分：基础分 + 匹配比例 × 乘数（公式系数均可配置）
-        return recommendationConfig.getCropBaseScore()
-                + matchRatio * recommendationConfig.getCropMatchMultiplier();
+        // 有任何交集 → 1.0，无交集 → 0.0
+        boolean hasMatch = userCrops.stream().anyMatch(productCrops::contains);
+        return hasMatch ? 1.0 : 0.0;
     }
 
     /**
-     * 计算地域+季节匹配得分（种子类商品专用）
+     * 计算适用动物匹配得分（饲料、兽药类商品）
      * <p>
-     * 种子商品通过 product_region_season 关联地域和季节，
-     * 匹配用户所在地域和当前季节
+     * 二元打分：有交集 → 1.0，无交集 → 0.0，信息不全 → 0.5
      * </p>
+     *
+     * @author IhaveBB
+     * @date 2026/03/29
      */
-    private double computeRegionSeasonScore(UserProfileDTO userProfile, ProductProfileDTO productProfile) {
-        double regionScore = 0.5;
-        double seasonScore = 0.5;
+    private double computeAnimalMatchScore(UserProfileDTO userProfile, ProductProfileDTO productProfile) {
+        List<Long> userAnimals = userProfile.getPreferredAnimalIds();
+        List<Long> productAnimals = productProfile.getAnimalIds();
 
-        // 地域匹配
-        if (userProfile.getRegionId() != null && productProfile.getRegionIds() != null
-                && !productProfile.getRegionIds().isEmpty()) {
-            if (productProfile.getRegionIds().contains(userProfile.getRegionId())) {
-                regionScore = 1.0;
-            } else {
-                regionScore = 0.2;
-            }
+        if (userAnimals == null || userAnimals.isEmpty()) {
+            return 0.5; // 用户无动物偏好，中性分
+        }
+        if (productAnimals == null || productAnimals.isEmpty()) {
+            return 0.5; // 商品无适用动物信息，中性分
         }
 
-        // 季节匹配
-        String currentSeason = getCurrentSeason();
-        if (currentSeason != null && productProfile.getSeasonNames() != null
-                && !productProfile.getSeasonNames().isEmpty()) {
-            boolean match = productProfile.getSeasonNames().stream()
-                    .anyMatch(s -> "全年".equals(s) || s.contains(currentSeason));
-            seasonScore = match ? 1.0 : 0.2;
-        }
-
-        // 地域和季节各占50%
-        return 0.5 * regionScore + 0.5 * seasonScore;
+        // 有任何交集 → 1.0，无交集 → 0.0
+        boolean hasMatch = userAnimals.stream().anyMatch(productAnimals::contains);
+        return hasMatch ? 1.0 : 0.0;
     }
 
     /**

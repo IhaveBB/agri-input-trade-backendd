@@ -56,6 +56,9 @@ public class ProductCreateDTO {
     @Schema(description = "适用作物分类ID列表（农药/肥料用，对应category表的种子分类）")
     private List<Long> categoryIds;
 
+    @Schema(description = "适用动物分类ID列表（饲料/兽药用，对应category表的畜禽分类）")
+    private List<Long> animalIds;
+
     @Schema(description = "区域-季节配置列表（种子用）")
     private List<RegionSeasonConfigDTO> regionSeasonConfigs;
 

@@ -50,5 +50,11 @@ public class UserProfileDTO {
 
     @Schema(description = "偏好作物名称列表")
     private List<String> preferredCropNames;
+
+    @Schema(description = "偏好动物 ID 列表（注册信息）")
+    private List<Long> preferredAnimalIds;
+
+    @Schema(description = "偏好动物名称列表")
+    private List<String> preferredAnimalNames;
 }
 

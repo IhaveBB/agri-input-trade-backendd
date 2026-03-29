@@ -212,6 +212,18 @@ public class RecommendationConfig {
      */
     private Double cropMatchMultiplier = 0.7;
 
+    // ==================== 动物匹配分数 ====================
+
+    /**
+     * 动物匹配公式基础分（finalAnimalScore = animalBaseScore + matchRatio * animalMatchMultiplier）
+     */
+    private Double animalBaseScore = 0.3;
+
+    /**
+     * 动物匹配比例乘数
+     */
+    private Double animalMatchMultiplier = 0.7;
+
     // ==================== 推荐文案生成阈值 ====================
 
     /**

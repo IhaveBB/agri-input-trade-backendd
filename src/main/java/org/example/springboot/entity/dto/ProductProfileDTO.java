@@ -57,4 +57,13 @@ public class ProductProfileDTO {
 
     @Schema(description = "适用作物名称列表")
     private java.util.List<String> cropNames;
+
+    @Schema(description = "适用动物 ID 列表")
+    private java.util.List<Long> animalIds;
+
+    @Schema(description = "适用动物名称列表")
+    private java.util.List<String> animalNames;
+
+    @Schema(description = "一级分类 ID")
+    private Long topCategoryId;
 }

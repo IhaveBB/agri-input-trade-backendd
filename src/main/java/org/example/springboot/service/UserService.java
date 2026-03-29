@@ -130,6 +130,7 @@ private FavoriteMapper favoriteMapper;
         user.setEmail(dto.getEmail());
         user.setLocation(dto.getLocation());
         user.setInterestedCrops(dto.getInterestedCrops());
+        user.setInterestedAnimals(dto.getInterestedAnimals());
         user.setRole(StringUtils.isNotBlank(dto.getRole()) ? dto.getRole() : "USER");
         user.setStatus(AccountStatus.ENABLED.getValue());
 
@@ -175,6 +176,9 @@ private FavoriteMapper favoriteMapper;
         }
         if (dto.getInterestedCrops() != null) {
             existingUser.setInterestedCrops(dto.getInterestedCrops());
+        }
+        if (dto.getInterestedAnimals() != null) {
+            existingUser.setInterestedAnimals(dto.getInterestedAnimals());
         }
 
         // 只有管理员可以修改状态

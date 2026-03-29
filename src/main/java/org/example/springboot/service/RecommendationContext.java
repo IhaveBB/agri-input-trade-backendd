@@ -36,9 +36,6 @@ public class RecommendationContext {
     private FusionRecommendationService fusionRecommendationService;
 
     @Resource
-    private NewProductRecommendationStrategy newProductStrategy;
-
-    @Resource
     private HotProductRecommendationStrategy hotProductStrategy;
 
     @Resource
@@ -51,8 +48,6 @@ public class RecommendationContext {
     public void init() {
         // 注册融合推荐策略（主策略）
         registerStrategy(fusionRecommendationService);
-        // 注册新品推荐策略
-        registerStrategy(newProductStrategy);
         // 注册热销推荐策略
         registerStrategy(hotProductStrategy);
         // 注册纯协同过滤策略（对比算法）
@@ -106,11 +101,11 @@ public class RecommendationContext {
     /**
      * 智能选择策略并执行推荐
      * <p>
-     * 根据用户状态智能选择最合适的推荐策略，严格按照论文描述的冷启动分支：
+     * 根据用户状态智能选择最合适的推荐策略：
      * <ul>
-     *   <li>新用户 + 有注册信息（地域/关注作物）→ 纯画像推荐（优先基于注册信息匹配商品）</li>
+     *   <li>新用户 + 有注册信息（地域/关注作物/关注动物）→ 纯画像推荐</li>
      *   <li>新用户 + 无注册信息 / 未登录 → 热销商品推荐（降级策略）</li>
-     *   <li>正常用户 → 融合推荐(80%) + 新品补充(20%)，数量不足时热销兜底</li>
+     *   <li>正常用户 → CF + 画像融合推荐，数量不足时热销兜底</li>
      * </ul>
      * </p>
      *
@@ -134,9 +129,10 @@ public class RecommendationContext {
 
         if (isNewUser) {
             if (hasProfile) {
-                // 新用户有注册信息（地域/关注作物）→ 优先基于注册信息的纯画像推荐
-                log.info("[智能推荐] 策略选择：画像冷启动（地域: {}, 偏好作物: {}）",
-                        userProfile.getRegionName(), userProfile.getPreferredCropNames());
+                // 新用户有注册信息 → 纯画像推荐
+                log.info("[智能推荐] 策略选择：画像冷启动（地域: {}, 偏好作物: {}, 偏好动物: {}）",
+                        userProfile.getRegionName(), userProfile.getPreferredCropNames(),
+                        userProfile.getPreferredAnimalNames());
                 results = fusionRecommendationService.recommendByProfileOnly(userId, userProfile, totalLimit);
             } else {
                 // 新用户无画像信息或未登录 → 降级为热销推荐
@@ -144,30 +140,11 @@ public class RecommendationContext {
                 return hotProductStrategy.recommend(userId, userProfile, totalLimit);
             }
         } else {
-            // 正常用户：融合推荐(80%) + 新品补充(20%)
-            int fusionCount = (int) (totalLimit * 0.8);
-            int newProductCount = totalLimit - fusionCount;
-            log.info("[智能推荐] 策略选择：融合推荐（融合{}条 + 新品补充{}条）",
-                    fusionCount, newProductCount);
-
+            // 正常用户：CF + 画像融合推荐（100%）
+            log.info("[智能推荐] 策略选择：融合推荐（CF + 画像，θ=0.7）");
             List<RecommendationResultDTO> fusionResults = fusionRecommendationService.recommend(userId);
-            results.addAll(fusionResults.subList(0, Math.min(fusionCount, fusionResults.size())));
+            results.addAll(fusionResults.subList(0, Math.min(totalLimit, fusionResults.size())));
             log.info("[智能推荐] 融合推荐实际获取{}条", results.size());
-
-            // 去重后补充新品推荐
-            List<RecommendationResultDTO> newProducts =
-                    newProductStrategy.recommend(userId, userProfile, newProductCount);
-            int addedNew = 0;
-            for (RecommendationResultDTO np : newProducts) {
-                if (results.stream().noneMatch(r -> r.getProductId().equals(np.getProductId()))) {
-                    results.add(np);
-                    addedNew++;
-                    if (results.size() >= totalLimit) {
-                        break;
-                    }
-                }
-            }
-            log.info("[智能推荐] 新品补充{}条，当前结果{}条", addedNew, results.size());
         }
 
         // 数量不足时用热销补充（兜底策略）
@@ -205,7 +182,9 @@ public class RecommendationContext {
         boolean hasRegion = userProfile.getRegionId() != null;
         boolean hasCrops = userProfile.getPreferredCropIds() != null
                 && !userProfile.getPreferredCropIds().isEmpty();
-        return hasRegion || hasCrops;
+        boolean hasAnimals = userProfile.getPreferredAnimalIds() != null
+                && !userProfile.getPreferredAnimalIds().isEmpty();
+        return hasRegion || hasCrops || hasAnimals;
     }
 
     /**

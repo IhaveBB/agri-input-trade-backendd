@@ -114,7 +114,8 @@ public class RegionSalesService {
             return null;
         }
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Product::getMerchantId, merchantId)
+        wrapper.eq(Product::getStatus, 1)
+               .eq(Product::getMerchantId, merchantId)
                .select(Product::getId);
         List<Product> products = productMapper.selectList(wrapper);
         return products.stream()

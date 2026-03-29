@@ -63,6 +63,9 @@ public class ProductVO {
     @Schema(description = "适用作物列表（对应category表的种子分类）")
     private List<CropVO> crops;
 
+    @Schema(description = "适用动物列表（对应category表的畜禽分类）")
+    private List<CropVO> animals;
+
     @Schema(description = "区域-季节配置列表")
     private List<ProductRegionSeasonVO> regionSeasonList;
 

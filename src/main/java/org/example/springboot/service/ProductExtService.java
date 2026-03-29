@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.springboot.entity.*;
 import org.example.springboot.entity.dto.ProductCreateDTO;
+import org.example.springboot.mapper.*;
 import org.example.springboot.entity.vo.ExtFieldConfigVO;
 import org.example.springboot.entity.vo.ProductVO;
 import org.example.springboot.enums.ErrorCodeEnum;
@@ -47,6 +48,9 @@ public class ProductExtService {
     private CategoryMapper categoryMapper;
 
     @Autowired
+    private ProductAnimalMapper productAnimalMapper;
+
+    @Autowired
     private UserMapper userMapper;
 
     /**
@@ -76,7 +80,12 @@ public class ProductExtService {
             saveProductCrops(productId, dto.getCategoryIds());
         }
 
-        // 3. 保存区域-季节配置
+        // 3. 保存适用动物（饲料/兽药用，使用畜禽分类ID）
+        if (dto.getAnimalIds() != null && !dto.getAnimalIds().isEmpty()) {
+            saveProductAnimals(productId, dto.getAnimalIds());
+        }
+
+        // 4. 保存区域-季节配置
         if (dto.getRegionSeasonConfigs() != null && !dto.getRegionSeasonConfigs().isEmpty()) {
             saveProductRegionSeasons(productId, dto.getRegionSeasonConfigs());
         }
@@ -130,6 +139,17 @@ public class ProductExtService {
 
             if (!dto.getRegionSeasonConfigs().isEmpty()) {
                 saveProductRegionSeasons(id, dto.getRegionSeasonConfigs());
+            }
+        }
+
+        // 更新适用动物
+        if (dto.getAnimalIds() != null) {
+            LambdaQueryWrapper<ProductAnimal> deleteAnimalQuery = new LambdaQueryWrapper<>();
+            deleteAnimalQuery.eq(ProductAnimal::getProductId, id);
+            productAnimalMapper.delete(deleteAnimalQuery);
+
+            if (!dto.getAnimalIds().isEmpty()) {
+                saveProductAnimals(id, dto.getAnimalIds());
             }
         }
 
@@ -188,6 +208,24 @@ public class ProductExtService {
             vo.setRegionSeasonList(vos);
         }
 
+        // 填充适用动物（从分类表查询畜禽子树）
+        LambdaQueryWrapper<ProductAnimal> animalQuery = new LambdaQueryWrapper<>();
+        animalQuery.eq(ProductAnimal::getProductId, id);
+        List<ProductAnimal> productAnimals = productAnimalMapper.selectList(animalQuery);
+        if (!productAnimals.isEmpty()) {
+            List<Long> animalCategoryIds = productAnimals.stream()
+                    .map(ProductAnimal::getCategoryId)
+                    .collect(Collectors.toList());
+            List<Category> animalCategories = categoryMapper.selectBatchIds(animalCategoryIds);
+            vo.setAnimals(animalCategories.stream().map(c -> {
+                ProductVO.CropVO animalVO = new ProductVO.CropVO();
+                animalVO.setId(c.getId());
+                animalVO.setName(c.getName());
+                animalVO.setParentId(c.getParentId());
+                return animalVO;
+            }).collect(Collectors.toList()));
+        }
+
         return vo;
     }
 
@@ -215,6 +253,15 @@ public class ProductExtService {
             productCrop.setProductId(productId);
             productCrop.setCategoryId(categoryId);
             productCropMapper.insert(productCrop);
+        }
+    }
+
+    private void saveProductAnimals(Long productId, List<Long> animalIds) {
+        for (Long categoryId : animalIds) {
+            ProductAnimal productAnimal = new ProductAnimal();
+            productAnimal.setProductId(productId);
+            productAnimal.setCategoryId(categoryId);
+            productAnimalMapper.insert(productAnimal);
         }
     }
 

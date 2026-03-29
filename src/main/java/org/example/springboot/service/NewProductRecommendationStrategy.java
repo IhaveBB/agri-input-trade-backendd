@@ -10,6 +10,7 @@ import org.example.springboot.entity.dto.CategoryPreferenceDTO;
 import org.example.springboot.entity.dto.RecommendationResultDTO;
 import org.example.springboot.entity.dto.UserProfileDTO;
 import org.example.springboot.mapper.CategoryMapper;
+import org.example.springboot.mapper.ProductAnimalMapper;
 import org.example.springboot.mapper.ProductCropMapper;
 import org.example.springboot.mapper.ProductMapper;
 import org.example.springboot.mapper.ProductRegionSeasonMapper;
@@ -64,6 +65,9 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
 
     @Resource
     private SeasonMapper seasonMapper;
+
+    @Resource
+    private ProductAnimalMapper productAnimalMapper;
 
     @Override
     public String getStrategyName() {
@@ -181,30 +185,30 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
             return calculateFreshnessScore(product);
         }
 
-        // 判断是否为种子类商品
-        boolean isSeed = isSeedProduct(product.getCategoryId());
+        // 判断商品一级分类
+        Long topCategoryId = getTopLevelCategoryId(product.getCategoryId());
 
-        // 1. 品类偏好匹配（30%）
-        double categoryScore = calculateCategoryScore(product, userProfile);
-
-        // 2. 价格区间匹配（25%）
-        double priceScore = calculatePriceScore(product, userProfile);
-
-        // 3. 按商品类型计算第三维度（35% = 原20%+15%）
+        // 1. 第三维度打分（90%）—— 根据商品类型分支
         double thirdDimensionScore;
-        if (isSeed) {
+        if (topCategoryId != null && topCategoryId == 1L) {
             // 种子：地域+季节匹配
             thirdDimensionScore = calculateRegionScore(product, userProfile);
-        } else {
-            // 非种子（农药、肥料等）：适用作物匹配
+        } else if (topCategoryId != null && (topCategoryId == 4L || topCategoryId == 5L)) {
+            // 饲料/兽药：适用动物匹配
+            thirdDimensionScore = calculateAnimalScore(product, userProfile);
+        } else if (topCategoryId != null && (topCategoryId == 2L || topCategoryId == 3L)) {
+            // 农药/肥料：适用作物匹配
             thirdDimensionScore = calculateCropScore(product, userProfile);
+        } else {
+            // 农膜/农机等：中性分
+            thirdDimensionScore = 0.5;
         }
 
-        // 4. 新品新鲜度（10%）
+        // 2. 新品新鲜度（10%）
         double freshnessScore = calculateFreshnessScore(product);
 
         // 加权求和
-        return 0.3 * categoryScore + 0.25 * priceScore + 0.35 * thirdDimensionScore + 0.1 * freshnessScore;
+        return 0.9 * thirdDimensionScore + 0.1 * freshnessScore;
     }
 
     /**
@@ -214,22 +218,36 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
         if (categoryId == null) {
             return false;
         }
+        Long topId = getTopLevelCategoryId(categoryId);
+        return topId != null && topId == 1L;
+    }
+
+    /**
+     * 获取一级分类ID（沿 parentId 向上追溯）
+     *
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    private Long getTopLevelCategoryId(Long categoryId) {
+        if (categoryId == null) {
+            return null;
+        }
         Long currentId = categoryId;
         int maxDepth = 10;
         while (maxDepth-- > 0) {
             Category category = categoryMapper.selectById(currentId);
             if (category == null) {
-                return false;
+                return null;
             }
             if (category.getLevel() != null && category.getLevel() == 1) {
-                return category.getId() == 1L;
+                return category.getId();
             }
             if (category.getParentId() == null || category.getParentId() == 0L) {
-                return category.getId() == 1L;
+                return category.getId();
             }
             currentId = category.getParentId();
         }
-        return false;
+        return null;
     }
 
     /**
@@ -417,6 +435,61 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
         // 匹配得分：基础分 + 匹配比例 × 乘数（由配置控制）
         return recommendationConfig.getCropBaseScore()
                 + matchRatio * recommendationConfig.getCropMatchMultiplier();
+    }
+
+    /**
+     * 计算适用动物匹配得分（饲料/兽药类商品）
+     * <p>
+     * 与作物匹配完全对称：
+     * 公式：animalBaseScore + matchRatio × animalMatchMultiplier
+     * matchRatio = |userAnimals ∩ productAnimals| / |userAnimals|
+     * </p>
+     *
+     * @author IhaveBB
+     * @date 2026/03/29
+     */
+    private double calculateAnimalScore(Product product, UserProfileDTO userProfile) {
+        if (userProfile == null) {
+            return 0.5;
+        }
+
+        List<Long> userAnimals = userProfile.getPreferredAnimalIds();
+        if (userAnimals == null || userAnimals.isEmpty()) {
+            return 0.5;
+        }
+
+        // 获取商品适用动物
+        LambdaQueryWrapper<org.example.springboot.entity.ProductAnimal> wrapper =
+                new LambdaQueryWrapper<>();
+        wrapper.eq(org.example.springboot.entity.ProductAnimal::getProductId, product.getId());
+        List<org.example.springboot.entity.ProductAnimal> productAnimals =
+                productAnimalMapper.selectList(wrapper);
+
+        if (productAnimals == null || productAnimals.isEmpty()) {
+            return 0.5;
+        }
+
+        List<Long> productAnimalIds = productAnimals.stream()
+                .map(org.example.springboot.entity.ProductAnimal::getCategoryId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+
+        if (productAnimalIds.isEmpty()) {
+            return 0.5;
+        }
+
+        long matchCount = userAnimals.stream()
+                .filter(productAnimalIds::contains)
+                .count();
+
+        if (matchCount == 0) {
+            return recommendationConfig.getAnimalBaseScore();
+        }
+
+        double matchRatio = (double) matchCount / userAnimals.size();
+        return recommendationConfig.getAnimalBaseScore()
+                + matchRatio * recommendationConfig.getAnimalMatchMultiplier();
     }
 
     /**
