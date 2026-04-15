@@ -46,7 +46,13 @@
       "Bash(find /Users/ihavebb/workspace/code/agri-input-trade -type d -name node_modules -prune -o -type f \\\\\\(-name *.vue -o -name *.ts -o -name *.tsx -o -name *.js -o -name *.jsx \\\\\\) -print)",
       "Bash(grep -r custom /Users/ihavebb/workspace/code/agri-input-trade/agri-input-trade-frontend/src/views --include=*.vue -l)",
       "Bash(,  \"description\": \"List files in project root directory\"} ])",
-      "Bash(,)"
+      "Bash(,)",
+      "Bash(brew install:*)",
+      "Bash(python3 -c \"import fitz; print\\(''pymupdf available''\\)\")",
+      "Bash(python3 -c \"import PyPDF2; print\\(''PyPDF2 available''\\)\")",
+      "Bash(python3 -c \"import pdfplumber; print\\(''pdfplumber available''\\)\")",
+      "Bash(pip3 install:*)",
+      "Bash(python3:*)"
     ]
   }
 }

@@ -271,9 +271,9 @@ public class FusionRecommendationService implements RecommendationStrategy {
             String currentSeason = getCurrentSeason();
             log.info("[画像冷启动] 当前季节: {}，开始遍历商品库计算画像匹配得分", currentSeason);
 
-            // 获取所有上架商品
+            // 获取所有上架且库存大于0的商品
             LambdaQueryWrapper<Product> productWrapper = new LambdaQueryWrapper<>();
-            productWrapper.eq(Product::getStatus, 1);
+            productWrapper.eq(Product::getStatus, 1).gt(Product::getStock, 0);
             List<Product> allProducts = productMapper.selectList(productWrapper);
             log.info("[画像冷启动] 候选商品总数: {}", allProducts.size());
 
@@ -1252,9 +1252,9 @@ public class FusionRecommendationService implements RecommendationStrategy {
         // 1. 获取用户交互过的商品及其强度
         Map<Long, Double> userInteractions = userInteractionMatrix.getOrDefault(userId, new HashMap<>());
 
-        // 2. 获取所有候选商品
+        // 2. 获取所有候选商品（上架且有库存）
         LambdaQueryWrapper<Product> productWrapper = new LambdaQueryWrapper<>();
-        productWrapper.eq(Product::getStatus, 1); // 只考虑上架商品
+        productWrapper.eq(Product::getStatus, 1).gt(Product::getStock, 0); // 只考虑上架且有库存的商品
         List<Product> allProducts = productMapper.selectList(productWrapper);
 
         // 3. 对每个未交互商品计算 CF 得分
@@ -1817,7 +1817,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
      */
     private List<RecommendationResultDTO> getHotProducts(int limit) {
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Product::getStatus, 1)
+        wrapper.eq(Product::getStatus, 1).gt(Product::getStock, 0)
                 .orderByDesc(Product::getSalesCount)
                 .last("LIMIT " + limit);
 
