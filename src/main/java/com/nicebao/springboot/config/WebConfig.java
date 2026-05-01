@@ -1,0 +1,83 @@
+package com.nicebao.springboot.config;
+
+import jakarta.annotation.Resource;
+import com.nicebao.springboot.util.FileUtil;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.PathMatchConfigurer;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+/**
+ * Web配置类
+ * 用于配置Spring MVC的核心行为，包括：
+ * - REST API的统一路径前缀
+ * - JWT认证拦截器
+ * - 请求路径匹配规则
+ */
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+    @Resource
+    private JwtInterceptor jwtInterceptor;
+
+    /**
+     * 配置路径匹配规则
+     * 为所有带有@RestController注解的控制器类添加统一的路径前缀
+     * 这样可以将API接口与其他Web资源区分开
+     *
+     * @param configurer 路径匹配配置器
+     */
+
+    @Override
+    public void configurePathMatch(PathMatchConfigurer configurer) {
+        // 为带有RestController注解的类添加"/api"路径前缀
+        // 排除 Knife4j/Swagger 相关的接口（通过包名判断）
+        configurer.addPathPrefix("/api", clazz ->
+                clazz.isAnnotationPresent(RestController.class) &&
+                        !clazz.getPackage().getName().contains("springfox") &&
+                        !clazz.getPackage().getName().contains("swagger")&&!clazz.getPackage().getName().contains("doc")
+        );
+    }
+
+    /**
+     * 配置拦截器
+     * 添加JWT认证拦截器，并详细配置拦截规则
+     * 拦截器配置包括：
+     * 1. 需要拦截的路径：/api/**
+     * 2. 不需要拦截的路径：
+     *    - 用户相关：登录、注册、找回密码等
+     *    - 静态资源：图片、文件等
+     *    - API文档：Swagger、Knife4j相关路径
+     *    - 其他开放接口：邮件服务、打卡等
+     *
+     * @param registry 拦截器注册表
+     */
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        // 将 /api/img/** 映射到磁盘上的 files/ 目录，用于访问上传的图片
+        registry.addResourceHandler("/api/img/**")
+                .addResourceLocations("file:" + FileUtil.FILE_BASE_PATH + "img/");
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        // 添加JWT拦截器，应用于"/api/**"路径下的请求
+        registry.addInterceptor(jwtInterceptor)
+                // 添加拦截路径模式
+                .addPathPatterns("/api/**")
+                // 排除不需要拦截的路径模式
+                .excludePathPatterns("/api/user/login")  // 登录接口不需要拦截
+                .excludePathPatterns("/api/user/forget") // 忘记密码接口不需要拦截
+                .excludePathPatterns("/api/user/add")           // 用户注册接口不需要拦截
+                .excludePathPatterns("/api/email/**") // 发送邮件接口不需要拦截
+                .excludePathPatterns("/api/img/**")     // 图片资源无需拦截
+                .excludePathPatterns("/api/v3/api-docs/**", "/api/swagger-ui.html", "/api/swagger-ui/**")
+                .excludePathPatterns("/api/doc.html","/api/webjars/**","/api/favicon.ico").excludePathPatterns("/api/checkIn/**")
+                .excludePathPatterns("/api/alipay/notify") // 支付宝回调接口不需要拦截（支付宝服务器调用，有验签机制）
+                .excludePathPatterns("/api/category/tree", "/api/category/all", "/api/category/top") // 分类接口不需要拦截（注册和首页都需要）
+                .excludePathPatterns("/api/recommendation/**") // 推荐接口不需要拦截（未登录用户也可使用，内部按需判断登录状态）
+                .excludePathPatterns("/api/product/page") // 商品列表接口不需要拦截（未登录用户首页浏览商品）
+                .excludePathPatterns("/api/carousel/active") // 轮播图接口不需要拦截（首页展示）
+                .excludePathPatterns("/api/notice/page"); // 公告接口不需要拦截（首页展示）
+    }
+}

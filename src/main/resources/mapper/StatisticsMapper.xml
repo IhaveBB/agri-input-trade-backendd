@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="org.example.springboot.mapper.StatisticsMapper">
+<mapper namespace="com.nicebao.springboot.mapper.StatisticsMapper">
 
     <!-- 销售趋势按天查询 -->
-    <select id="selectSalesTrend" resultType="org.example.springboot.entity.dto.statistics.SalesTrendDTO">
+    <select id="selectSalesTrend" resultType="com.nicebao.springboot.entity.dto.statistics.SalesTrendDTO">
         SELECT
             DATE_FORMAT(o.created_at, '%m/%d') AS date,
             COUNT(*) AS orderCount,
@@ -21,7 +21,7 @@
     </select>
 
     <!-- 按季节查询销售统计 -->
-    <select id="selectSeasonalSales" resultType="org.example.springboot.entity.dto.statistics.SeasonalSalesDTO">
+    <select id="selectSeasonalSales" resultType="com.nicebao.springboot.entity.dto.statistics.SeasonalSalesDTO">
         SELECT
             t.season,
             COUNT(*) AS orderCount,
@@ -56,7 +56,7 @@
     </select>
 
     <!-- 按月份查询销售统计 -->
-    <select id="selectMonthlySales" resultType="org.example.springboot.entity.dto.statistics.SeasonalSalesDTO">
+    <select id="selectMonthlySales" resultType="com.nicebao.springboot.entity.dto.statistics.SeasonalSalesDTO">
         SELECT
             t.month,
             CONCAT(t.month, '月') AS monthName,
@@ -81,7 +81,7 @@
     </select>
 
     <!-- 按地区查询销售统计 -->
-    <select id="selectRegionSales" resultType="org.example.springboot.entity.dto.statistics.RegionSalesDTO">
+    <select id="selectRegionSales" resultType="com.nicebao.springboot.entity.dto.statistics.RegionSalesDTO">
         SELECT
             t.region,
             COUNT(*) AS orderCount,
