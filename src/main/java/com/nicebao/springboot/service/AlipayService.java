@@ -246,23 +246,12 @@ public class AlipayService {
 
     /**
      * 回滚库存（支付失败时调用）
+     * 使用原子SQL操作，避免并发竞态条件
      */
     private void rollbackStock(Long productId, Integer quantity) {
         try {
-            String stockLockKey = LOCK_PREFIX_STOCK + productId;
-            String stockLockValue = UUID.randomUUID().toString();
-            if (redisUtil.tryLock(stockLockKey, stockLockValue, 5)) {
-                try {
-                    Product product = productMapper.selectById(productId);
-                    if (product != null) {
-                        product.setStock(product.getStock() + quantity);
-                        productMapper.updateById(product);
-                        LOGGER.info("库存回滚成功，productId={}，回滚数量={}", productId, quantity);
-                    }
-                } finally {
-                    redisUtil.releaseLock(stockLockKey, stockLockValue);
-                }
-            }
+            productMapper.increaseStock(productId, quantity);
+            LOGGER.info("库存回滚成功，productId={}，回滚数量={}", productId, quantity);
         } catch (Exception e) {
             LOGGER.error("库存回滚失败，productId={}，quantity={}", productId, quantity, e);
         }
@@ -436,27 +425,25 @@ public class AlipayService {
             // 删除支付中标记
             redisUtil.del(RECHARGE_PAYING_PREFIX + rechargeRecord.getId());
 
-            // 增加用户余额
+            // 原子增加用户余额
             User user = userMapper.selectById(rechargeRecord.getUserId());
             if (user != null) {
                 BigDecimal balanceBefore = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
-                BigDecimal balanceAfter = balanceBefore.add(rechargeRecord.getAmount());
-                user.setBalance(balanceAfter);
-                userMapper.updateById(user);
+                userMapper.increaseBalance(rechargeRecord.getUserId(), rechargeRecord.getAmount());
 
                 // 记录余额变动
                 BalanceRecord balanceRecord = new BalanceRecord();
                 balanceRecord.setUserId(user.getId());
                 balanceRecord.setAmount(rechargeRecord.getAmount());
                 balanceRecord.setBalanceBefore(balanceBefore);
-                balanceRecord.setBalanceAfter(balanceAfter);
+                balanceRecord.setBalanceAfter(balanceBefore.add(rechargeRecord.getAmount()));
                 balanceRecord.setType(1); // 充值
                 balanceRecord.setRemark("支付宝充值");
                 balanceRecord.setCreatedAt(new Timestamp(System.currentTimeMillis()));
                 balanceRecordMapper.insert(balanceRecord);
 
-                LOGGER.info("充值成功，已增加用户余额，用户ID={}，充值金额={}，当前余额={}",
-                        user.getId(), rechargeRecord.getAmount(), balanceAfter);
+                LOGGER.info("充值成功，已增加用户余额，用户ID={}，充值金额={}",
+                        user.getId(), rechargeRecord.getAmount());
             } else {
                 LOGGER.error("充值回调：用户不存在，userId={}", rechargeRecord.getUserId());
                 // 抛出异常触发回滚

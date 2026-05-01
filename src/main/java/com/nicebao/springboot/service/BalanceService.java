@@ -87,11 +87,9 @@ public class BalanceService {
             throw new BusinessException(ErrorCodeEnum.USER_NOT_FOUND);
         }
 
-        // 增加余额
+        // 原子增加余额
         BigDecimal balanceBefore = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
-        BigDecimal balanceAfter = balanceBefore.add(amount);
-        user.setBalance(balanceAfter);
-        int result = userMapper.updateById(user);
+        int result = userMapper.increaseBalance(userId, amount);
         if (result <= 0) {
             throw new BusinessException(ErrorCodeEnum.ERROR, "充值失败，更新余额失败");
         }
@@ -101,16 +99,16 @@ public class BalanceService {
         balanceRecord.setUserId(userId);
         balanceRecord.setAmount(amount);
         balanceRecord.setBalanceBefore(balanceBefore);
-        balanceRecord.setBalanceAfter(balanceAfter);
+        balanceRecord.setBalanceAfter(balanceBefore.add(amount));
         balanceRecord.setType(1); // 充值
         balanceRecord.setRemark(remark != null ? remark : "管理员充值");
         balanceRecord.setCreatedAt(new Timestamp(System.currentTimeMillis()));
         balanceRecordMapper.insert(balanceRecord);
 
-        LOGGER.info("余额充值成功，用户ID：{}，充值金额：{}，操作管理员ID：{}，当前余额：{}",
-                userId, amount, adminId, balanceAfter);
+        LOGGER.info("余额充值成功，用户ID：{}，充值金额：{}，操作管理员ID：{}",
+                userId, amount, adminId);
 
-        return balanceAfter;
+        return balanceBefore.add(amount);
     }
 
     /**

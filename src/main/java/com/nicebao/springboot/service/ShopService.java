@@ -52,7 +52,10 @@ public class ShopService {
 
         ShopDTO dto = new ShopDTO();
         dto.setId(merchant.getId());
-        dto.setShopName(merchant.getUsername());
+        // 优先使用真实姓名作为店铺名，无真实姓名时使用用户名
+        String shopName = (merchant.getName() != null && !merchant.getName().isEmpty())
+                ? merchant.getName() : merchant.getUsername();
+        dto.setShopName(shopName);
         dto.setMerchantName(merchant.getName());
         dto.setLocation(merchant.getLocation());
         dto.setBusinessLicense(merchant.getBusinessLicense());

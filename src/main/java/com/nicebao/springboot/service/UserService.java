@@ -444,14 +444,7 @@ private FavoriteMapper favoriteMapper;
     }
 
     private boolean checkUserProducts(int id){
-        List<Product> products = productMapper.selectList(new LambdaQueryWrapper<Product>().eq(Product::getMerchantId, id));
-        for (Product product : products) {
-            if(product!=null){
-                return false;
-
-            }
-        }
-        return true;
+        return productMapper.selectCount(new LambdaQueryWrapper<Product>().eq(Product::getMerchantId, id)) == 0;
     }
 
     private void deleteUserRelations(int id){

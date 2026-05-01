@@ -74,6 +74,7 @@ public class OrderService {
      * @author IhaveBB
      * @date 2026/03/21
      */
+    @Transactional(rollbackFor = Exception.class)
     public Order createOrder(Long userId, OrderCreateDTO dto) {
         // 检查商品库存
         Product product = productMapper.selectById(dto.getProductId());
@@ -448,31 +449,24 @@ public class OrderService {
                 redisUtil.releaseLock(stockLockKey, stockLockValue);
             }
 
-            // 【新增】检查用户余额并扣减
+            // 【新增】检查用户并原子扣减余额
             User user = userMapper.selectById(order.getUserId());
             if (user == null) {
                 throw new BusinessException(ErrorCodeEnum.USER_NOT_FOUND);
             }
 
-            BigDecimal balance = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
-            if (balance.compareTo(order.getTotalPrice()) < 0) {
-                throw new BusinessException(ErrorCodeEnum.ERROR, "余额不足，请先充值");
-            }
-
-            // 扣减余额
-            BigDecimal newBalance = balance.subtract(order.getTotalPrice());
-            user.setBalance(newBalance);
-            int userUpdateResult = userMapper.updateById(user);
+            BigDecimal balanceBefore = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
+            int userUpdateResult = userMapper.decreaseBalance(order.getUserId(), order.getTotalPrice());
             if (userUpdateResult <= 0) {
-                throw new BusinessException(ErrorCodeEnum.ERROR, "余额扣减失败");
+                throw new BusinessException(ErrorCodeEnum.ERROR, "余额不足，请先充值");
             }
 
             // 记录余额变动
             BalanceRecord balanceRecord = new BalanceRecord();
             balanceRecord.setUserId(user.getId());
             balanceRecord.setAmount(order.getTotalPrice().negate());
-            balanceRecord.setBalanceBefore(balance);
-            balanceRecord.setBalanceAfter(newBalance);
+            balanceRecord.setBalanceBefore(balanceBefore);
+            balanceRecord.setBalanceAfter(balanceBefore.subtract(order.getTotalPrice()));
             balanceRecord.setType(2); // 消费
             balanceRecord.setOrderId(order.getId());
             balanceRecord.setRemark("订单支付");
@@ -497,7 +491,7 @@ public class OrderService {
             paymentRecord.setCreatedAt(new Timestamp(System.currentTimeMillis()));
             paymentRecordMapper.insert(paymentRecord);
 
-            LOGGER.info("支付订单成功，订单ID：{}，余额支付，扣除余额：{}，剩余余额：{}", id, order.getTotalPrice(), newBalance);
+            LOGGER.info("支付订单成功，订单ID：{}，余额支付，扣除余额：{}", id, order.getTotalPrice());
 
         } finally {
             redisUtil.releaseLock(orderLockKey, orderLockValue);
@@ -659,35 +653,29 @@ public class OrderService {
 
         // 如果同意退款，恢复商品库存并退回余额
         if (status == 6) {
-            Product product = productMapper.selectById(order.getProductId());
-            if (product != null) {
-                // 恢复库存
-                product.setStock(product.getStock() + order.getQuantity());
-                productMapper.updateById(product);
-                LOGGER.info("退款成功，已恢复商品库存，商品ID：{}，数量：{}", product.getId(), order.getQuantity());
-            }
+            // 原子恢复库存
+            productMapper.increaseStock(order.getProductId(), order.getQuantity());
+            LOGGER.info("退款成功，已恢复商品库存，商品ID：{}，数量：{}", order.getProductId(), order.getQuantity());
 
-            // 【新增】退回余额
+            // 原子退回余额
             User user = userMapper.selectById(order.getUserId());
             if (user != null) {
-                BigDecimal balance = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
-                BigDecimal newBalance = balance.add(order.getTotalPrice());
-                user.setBalance(newBalance);
-                userMapper.updateById(user);
+                BigDecimal balanceBefore = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
+                userMapper.increaseBalance(order.getUserId(), order.getTotalPrice());
 
                 // 记录余额变动
                 BalanceRecord balanceRecord = new BalanceRecord();
                 balanceRecord.setUserId(user.getId());
                 balanceRecord.setAmount(order.getTotalPrice());
-                balanceRecord.setBalanceBefore(balance);
-                balanceRecord.setBalanceAfter(newBalance);
+                balanceRecord.setBalanceBefore(balanceBefore);
+                balanceRecord.setBalanceAfter(balanceBefore.add(order.getTotalPrice()));
                 balanceRecord.setType(3); // 退款
                 balanceRecord.setOrderId(order.getId());
                 balanceRecord.setRemark("订单退款");
                 balanceRecord.setCreatedAt(new Timestamp(System.currentTimeMillis()));
                 balanceRecordMapper.insert(balanceRecord);
 
-                LOGGER.info("退款成功，已退回余额，用户ID：{}，金额：{}，当前余额：{}", user.getId(), order.getTotalPrice(), newBalance);
+                LOGGER.info("退款成功，已退回余额，用户ID：{}，金额：{}", user.getId(), order.getTotalPrice());
             }
         }
 

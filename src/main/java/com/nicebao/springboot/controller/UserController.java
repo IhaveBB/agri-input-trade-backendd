@@ -60,7 +60,7 @@ public class UserController {
         String role = UserContext.getRole();
 
         // 权限检查：只能查看自己的信息，或者管理员查看他人信息
-        if (currentUserId != null && !currentUserId.equals((long) id) && !UserRole.isAdmin(role)) {
+        if (currentUserId == null || (!currentUserId.equals((long) id) && !UserRole.isAdmin(role))) {
             throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限查看他人信息");
         }
 
@@ -86,7 +86,7 @@ public class UserController {
         String role = UserContext.getRole();
 
         // 权限检查
-        if (currentUserId != null && !username.equals(usernameFromContext) && !UserRole.isAdmin(role)) {
+        if (currentUserId == null || (!username.equals(usernameFromContext) && !UserRole.isAdmin(role))) {
             throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限查看他人信息");
         }
 
@@ -127,7 +127,7 @@ public class UserController {
         String role = UserContext.getRole();
 
         // 权限检查：只能修改自己的密码，管理员可以修改任何人的密码
-        if (currentUserId != null && !currentUserId.equals((long) id) && !UserRole.isAdmin(role)) {
+        if (currentUserId == null || (!currentUserId.equals((long) id) && !UserRole.isAdmin(role))) {
             throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限修改他人密码");
         }
 
@@ -295,7 +295,7 @@ public class UserController {
         String role = UserContext.getRole();
 
         // 权限检查：只能更新自己的信息，管理员可以更新任何人的信息
-        if (currentUserId != null && !currentUserId.equals(id) && !UserRole.isAdmin(role)) {
+        if (currentUserId == null || (!currentUserId.equals(id) && !UserRole.isAdmin(role))) {
             throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限更新他人信息");
         }
 

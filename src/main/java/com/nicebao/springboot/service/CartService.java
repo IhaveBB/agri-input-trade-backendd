@@ -58,8 +58,14 @@ public class CartService {
         Cart existingCart = cartMapper.selectOne(queryWrapper);
 
         if (existingCart != null) {
+            // 校验：购物车已有数量 + 新增数量不能超过库存
+            int newQuantity = existingCart.getQuantity() + dto.getQuantity();
+            if (newQuantity > product.getStock()) {
+                throw new BusinessException(ErrorCodeEnum.PRODUCT_STOCK_INSUFFICIENT,
+                        "库存不足，当前购物车已有" + existingCart.getQuantity() + "件，库存仅剩" + product.getStock() + "件");
+            }
             // 更新数量
-            existingCart.setQuantity(existingCart.getQuantity() + dto.getQuantity());
+            existingCart.setQuantity(newQuantity);
             int result = cartMapper.updateById(existingCart);
             if (result > 0) {
                 LOGGER.info("更新购物车成功，购物车ID：{}", existingCart.getId());
