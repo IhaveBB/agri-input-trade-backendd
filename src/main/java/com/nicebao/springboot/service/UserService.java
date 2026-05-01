@@ -35,6 +35,9 @@ public class UserService {
     @Value("${user.defaultPassword}")
     private String DEFAULT_PWD;
 
+    @Value("${user.admin-invitation-code}")
+    private String adminInvitationCode;
+
     @Lazy
     @Resource
     private EmailService emailService;
@@ -122,6 +125,18 @@ private FavoriteMapper favoriteMapper;
             throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "验证码错误或已过期");
         }
 
+        // 角色校验：只允许注册 USER 和 MERCHANT，ADMIN 需要邀请码
+        String role = StringUtils.isNotBlank(dto.getRole()) ? dto.getRole() : "USER";
+        if ("ADMIN".equals(role)) {
+            // 管理员注册需要验证邀请码
+            String invitationCode = dto.getInvitationCode();
+            if (!adminInvitationCode.equals(invitationCode)) {
+                throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "管理员邀请码不正确");
+            }
+        } else if (!"USER".equals(role) && !"MERCHANT".equals(role)) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "不支持的角色类型");
+        }
+
         if (userMapper.selectOne(new QueryWrapper<User>().eq("username", dto.getUsername())) != null) {
             throw new BusinessException(ErrorCodeEnum.ALREADY_EXISTS, "用户名已存在");
         }
@@ -137,7 +152,7 @@ private FavoriteMapper favoriteMapper;
         user.setLocation(dto.getLocation());
         user.setInterestedCrops(dto.getInterestedCrops());
         user.setInterestedAnimals(dto.getInterestedAnimals());
-        user.setRole(StringUtils.isNotBlank(dto.getRole()) ? dto.getRole() : "USER");
+        user.setRole(role);
         user.setStatus(AccountStatus.ENABLED.getValue());
 
         int result = userMapper.insert(user);

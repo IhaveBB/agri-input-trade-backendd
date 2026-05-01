@@ -42,4 +42,7 @@ public class UserRegisterDTO {
 
     @Schema(description = "感兴趣动物分类ID列表，逗号分隔")
     private String interestedAnimals;
+
+    @Schema(description = "管理员邀请码（注册管理员角色时必填）")
+    private String invitationCode;
 }
