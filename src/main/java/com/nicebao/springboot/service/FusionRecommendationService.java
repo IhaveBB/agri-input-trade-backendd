@@ -11,10 +11,10 @@ import com.nicebao.springboot.mapper.*;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import com.nicebao.springboot.config.RecommendationConfig;
-import org.example.springboot.entity.*;
-import org.example.springboot.entity.dto.*;
+import com.nicebao.springboot.entity.*;
+import com.nicebao.springboot.entity.dto.*;
 import com.nicebao.springboot.enumClass.RecommendationActionType;
-import org.example.springboot.mapper.*;
+import com.nicebao.springboot.mapper.*;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;

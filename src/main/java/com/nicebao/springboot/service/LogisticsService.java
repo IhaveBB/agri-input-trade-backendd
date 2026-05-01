@@ -11,7 +11,7 @@ import com.nicebao.springboot.mapper.AddressMapper;
 import com.nicebao.springboot.mapper.LogisticsMapper;
 import com.nicebao.springboot.mapper.OrderMapper;
 import com.nicebao.springboot.mapper.ProductMapper;
-import org.example.springboot.mapper.*;
+import com.nicebao.springboot.mapper.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;

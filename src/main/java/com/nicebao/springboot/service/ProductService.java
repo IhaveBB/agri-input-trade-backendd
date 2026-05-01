@@ -6,10 +6,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.nicebao.springboot.entity.*;
 import com.nicebao.springboot.mapper.*;
 import jakarta.annotation.Resource;
-import org.example.springboot.entity.*;
+import com.nicebao.springboot.entity.*;
 import com.nicebao.springboot.enums.ErrorCodeEnum;
 import com.nicebao.springboot.exception.BusinessException;
-import org.example.springboot.mapper.*;
+import com.nicebao.springboot.mapper.*;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

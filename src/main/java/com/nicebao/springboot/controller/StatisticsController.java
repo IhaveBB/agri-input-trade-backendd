@@ -4,7 +4,7 @@ import com.nicebao.springboot.entity.dto.statistics.*;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import com.nicebao.springboot.common.Result;
-import org.example.springboot.entity.dto.statistics.*;
+import com.nicebao.springboot.entity.dto.statistics.*;
 import com.nicebao.springboot.enums.ErrorCodeEnum;
 import com.nicebao.springboot.exception.BusinessException;
 import com.nicebao.springboot.service.RecommendActionService;

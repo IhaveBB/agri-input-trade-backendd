@@ -10,7 +10,7 @@ import com.nicebao.springboot.entity.*;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import com.nicebao.springboot.config.AliPayConfig;
-import org.example.springboot.entity.*;
+import com.nicebao.springboot.entity.*;
 import com.nicebao.springboot.enums.ErrorCodeEnum;
 import com.nicebao.springboot.exception.BusinessException;
 import com.nicebao.springboot.mapper.OrderMapper;

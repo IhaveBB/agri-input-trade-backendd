@@ -7,7 +7,7 @@ import com.nicebao.springboot.entity.Order;
 import com.nicebao.springboot.entity.Product;
 import com.nicebao.springboot.entity.User;
 import com.nicebao.springboot.entity.Category;
-import org.example.springboot.entity.dto.statistics.*;
+import com.nicebao.springboot.entity.dto.statistics.*;
 import com.nicebao.springboot.mapper.OrderMapper;
 import com.nicebao.springboot.mapper.ProductMapper;
 import com.nicebao.springboot.mapper.UserMapper;

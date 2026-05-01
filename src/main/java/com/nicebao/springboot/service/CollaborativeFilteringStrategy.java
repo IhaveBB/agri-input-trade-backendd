@@ -6,10 +6,10 @@ import com.nicebao.springboot.mapper.*;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import com.nicebao.springboot.config.RecommendationConfig;
-import org.example.springboot.entity.*;
+import com.nicebao.springboot.entity.*;
 import com.nicebao.springboot.entity.dto.RecommendationResultDTO;
 import com.nicebao.springboot.entity.dto.UserProfileDTO;
-import org.example.springboot.mapper.*;
+import com.nicebao.springboot.mapper.*;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;

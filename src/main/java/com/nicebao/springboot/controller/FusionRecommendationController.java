@@ -9,7 +9,7 @@ import com.nicebao.springboot.annotation.RequiresRole;
 import com.nicebao.springboot.common.Result;
 import com.nicebao.springboot.entity.dto.RecommendationResultDTO;
 import com.nicebao.springboot.entity.dto.UserProfileDTO;
-import org.example.springboot.service.*;
+import com.nicebao.springboot.service.*;
 import com.nicebao.springboot.util.UserContext;
 import org.springframework.web.bind.annotation.*;
 

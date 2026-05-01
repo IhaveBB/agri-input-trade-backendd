@@ -5,7 +5,7 @@ import com.nicebao.springboot.entity.dto.statistics.*;
 import jakarta.annotation.Resource;
 import com.nicebao.springboot.entity.Product;
 import com.nicebao.springboot.entity.RecommendAction;
-import org.example.springboot.entity.dto.statistics.*;
+import com.nicebao.springboot.entity.dto.statistics.*;
 import com.nicebao.springboot.mapper.ProductMapper;
 import com.nicebao.springboot.mapper.RecommendActionMapper;
 import org.slf4j.Logger;
