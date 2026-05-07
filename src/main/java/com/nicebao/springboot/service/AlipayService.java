@@ -24,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -75,6 +76,10 @@ public class AlipayService {
 
     @Autowired
     private RedisUtil redisUtil;
+
+    @Lazy
+    @Autowired
+    private AlipayService self;
 
     @Value("${order.unpaid-expire-minutes:10}")
     private long unpaidExpireMinutes;
@@ -294,13 +299,13 @@ public class AlipayService {
 
         // 判断是充值订单还是商品订单
         if (tradeNo.startsWith("RECHARGE_")) {
-            // 处理充值订单回调 - 内部管理事务
-            doHandleRechargeNotify(tradeNo, params);
+            // 处理充值订单回调 - 通过代理调用确保事务生效
+            self.doHandleRechargeNotify(tradeNo, params);
             return true;
         }
 
-        // 处理商品订单回调 - 内部管理事务
-        doHandleOrderNotify(tradeNo, params);
+        // 处理商品订单回调 - 通过代理调用确保事务生效
+        self.doHandleOrderNotify(tradeNo, params);
         return true;
     }
 

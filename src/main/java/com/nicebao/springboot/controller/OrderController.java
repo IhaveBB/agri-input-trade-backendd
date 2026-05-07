@@ -138,8 +138,8 @@ public class OrderController {
      * @author IhaveBB
      * @date 2026/03/19
      */
-    @Operation(summary = "删除订单")
-    @RequiresRole("ADMIN")
+    @Operation(summary = "删除订单（已禁用）")
+    @RequiresRole("NONE")
     @DeleteMapping("/{id}")
     public Result<Void> deleteOrder(@PathVariable Long id) {
         orderService.deleteOrder(id);
@@ -295,8 +295,8 @@ public class OrderController {
      * @author IhaveBB
      * @date 2026/03/19
      */
-    @Operation(summary = "批量删除订单")
-    @RequiresRole("ADMIN")
+    @Operation(summary = "批量删除订单（已禁用）")
+    @RequiresRole("NONE")
     @DeleteMapping("/batch")
     public Result<Void> deleteBatch(@RequestParam List<Long> ids) {
         orderService.deleteBatch(ids);

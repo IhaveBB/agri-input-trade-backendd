@@ -28,6 +28,7 @@ public class AlipayController {
     private BalanceService balanceService;
 
     @Operation(summary = "创建支付")
+    @RequiresRole
     @GetMapping("/pay/{orderId}")
     public void pay(@PathVariable Long orderId, HttpServletResponse response) throws Exception {
         LOGGER.info("收到支付创建请求，订单ID：{}", orderId);

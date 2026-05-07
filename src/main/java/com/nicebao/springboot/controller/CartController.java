@@ -98,10 +98,13 @@ public class CartController {
         Long currentUserId = UserContext.getUserId();
         String role = UserContext.getRole();
 
-        // 验证购物车项是否属于当前用户（管理员可以操作任意购物车）
+        // 验证购物车项是否属于当前用户（管理员不能删除购物车）
         Cart cart = cartService.getCartById(id);
         if (cart != null) {
-            if (!UserRole.isAdmin(role) && !cart.getUserId().equals(currentUserId)) {
+            if (UserRole.isAdmin(role)) {
+                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "管理员不能删除用户购物车");
+            }
+            if (!cart.getUserId().equals(currentUserId)) {
                 throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限删除他人购物车");
             }
         }
@@ -182,8 +185,11 @@ public class CartController {
         Long currentUserId = UserContext.getUserId();
         String role = UserContext.getRole();
 
-        // 普通用户只能清空自己的购物车
-        if (!UserRole.isAdmin(role) && !currentUserId.equals(userId)) {
+        // 管理员不能清空用户购物车，普通用户只能清空自己的购物车
+        if (UserRole.isAdmin(role)) {
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "管理员不能清空用户购物车");
+        }
+        if (!currentUserId.equals(userId)) {
             throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限清空他人购物车");
         }
 
@@ -239,14 +245,14 @@ public class CartController {
         Long currentUserId = UserContext.getUserId();
         String role = UserContext.getRole();
 
-        // 验证所有购物车项是否属于当前用户（管理员可以删除任意购物车项）
-        // 过滤掉不存在的购物车项，只校验存在的
-        if (!UserRole.isAdmin(role)) {
-            for (Long id : ids) {
-                Cart cart = cartService.getCartById(id);
-                if (cart != null && !cart.getUserId().equals(currentUserId)) {
-                    throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限删除他人购物车");
-                }
+        // 管理员不能批量删除购物车，普通用户只能删除自己的
+        if (UserRole.isAdmin(role)) {
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "管理员不能删除用户购物车");
+        }
+        for (Long id : ids) {
+            Cart cart = cartService.getCartById(id);
+            if (cart != null && !cart.getUserId().equals(currentUserId)) {
+                throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限删除他人购物车");
             }
         }
 

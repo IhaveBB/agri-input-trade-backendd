@@ -24,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.nicebao.springboot.entity.User;
 import com.nicebao.springboot.entity.BalanceRecord;
 import com.nicebao.springboot.entity.PaymentRecord;
+import com.nicebao.springboot.entity.StockIn;
+import com.nicebao.springboot.entity.StockOut;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -61,6 +63,12 @@ public class OrderService {
     private PaymentRecordMapper paymentRecordMapper;
 
     @Autowired
+    private StockInMapper stockInMapper;
+
+    @Autowired
+    private StockOutMapper stockOutMapper;
+
+    @Autowired
     private RedisUtil redisUtil;
 
 
@@ -92,13 +100,14 @@ public class OrderService {
         }
         LOGGER.info("创建订单扣减库存成功，商品ID：{}，扣减数量：{}", product.getId(), dto.getQuantity());
 
-        // 构建订单实体
+        // 构建订单实体（使用数据库中的商品实际价格，防止前端篡改）
+        BigDecimal actualPrice = getActualPrice(product);
         Order order = new Order();
         order.setUserId(userId);
         order.setProductId(dto.getProductId());
         order.setQuantity(dto.getQuantity());
-        order.setPrice(dto.getPrice());
-        order.setTotalPrice(dto.getPrice().multiply(BigDecimal.valueOf(dto.getQuantity())));
+        order.setPrice(actualPrice);
+        order.setTotalPrice(actualPrice.multiply(BigDecimal.valueOf(dto.getQuantity())));
         order.setStatus(0); // 待支付
         order.setRemark(dto.getRemark());
         order.setRecvName(dto.getRecvName());
@@ -154,10 +163,28 @@ public class OrderService {
             LOGGER.info("订单取消，库存回滚+{}，商品ID：{}", order.getQuantity(), order.getProductId());
         }
 
-        // 订单完成时增加商品销量
+        // 订单完成时增加商品销量 + 自动生成出库记录
         if (status == 3 && oldStatus != 3) {
             productMapper.increaseSalesCount(order.getProductId(), order.getQuantity());
             LOGGER.info("订单完成，商品销量+{}，商品ID：{}", order.getQuantity(), order.getProductId());
+
+            // 自动生成销售出库记录（库存已在创建订单时扣减，此处仅记录留痕）
+            Product product = productMapper.selectById(order.getProductId());
+            User orderUser = userMapper.selectById(order.getUserId());
+            StockOut stockOut = new StockOut();
+            stockOut.setProductId(order.getProductId());
+            stockOut.setQuantity(order.getQuantity());
+            stockOut.setUnitPrice(order.getPrice());
+            stockOut.setTotalPrice(order.getTotalPrice());
+            stockOut.setType(1); // 销售出库
+            stockOut.setCustomerName(orderUser != null ? orderUser.getName() : "");
+            stockOut.setOrderNo(String.valueOf(order.getId()));
+            stockOut.setOperatorId(product.getMerchantId()); // 用商家用户ID，商家出库管理页面可查到
+            stockOut.setRemark("订单完成自动出库");
+            stockOut.setStatus(1);
+            stockOut.setCreatedAt(new Timestamp(System.currentTimeMillis()));
+            stockOutMapper.insert(stockOut);
+            LOGGER.info("订单完成，已自动生成销售出库记录，订单ID：{}", order.getId());
         }
 
         syncLogisticsOnStatusChange(id, status);
@@ -173,6 +200,7 @@ public class OrderService {
      * @author IhaveBB
      * @date 2026/03/18
      */
+    @Transactional(rollbackFor = Exception.class)
     public void deleteOrder(Long id) {
         deleteRelation(id);
         int result = orderMapper.deleteById(id);
@@ -365,6 +393,7 @@ public class OrderService {
      * @author IhaveBB
      * @date 2026/03/18
      */
+    @Transactional(rollbackFor = Exception.class)
     public void deleteBatch(List<Long> ids) {
         // 检查每个订单是否存在关联记录
         for (Long id : ids) {
@@ -679,6 +708,24 @@ public class OrderService {
             }
         }
 
+        // 自动生成退货入库记录（库存已通过 increaseStock 恢复，此处仅记录留痕）
+        if (status == 6) {
+            Product refundProduct = productMapper.selectById(order.getProductId());
+            StockIn stockIn = new StockIn();
+            stockIn.setProductId(order.getProductId());
+            stockIn.setQuantity(order.getQuantity());
+            stockIn.setUnitPrice(order.getPrice());
+            stockIn.setTotalPrice(order.getTotalPrice());
+            stockIn.setSupplier("退货入库-订单" + order.getId());
+            stockIn.setStockDate(new Timestamp(System.currentTimeMillis()));
+            stockIn.setOperatorId(refundProduct != null ? refundProduct.getMerchantId() : order.getUserId());
+            stockIn.setRemark("订单退款退货入库");
+            stockIn.setStatus(1);
+            stockIn.setCreatedAt(new Timestamp(System.currentTimeMillis()));
+            stockInMapper.insert(stockIn);
+            LOGGER.info("退款成功，已自动生成退货入库记录，订单ID：{}", order.getId());
+        }
+
         // 同步更新物流状态
         syncLogisticsOnStatusChange(id, status);
 
@@ -725,13 +772,14 @@ public class OrderService {
             }
             LOGGER.info("批量创建订单扣减库存成功，商品ID：{}，扣减数量：{}", product.getId(), item.getQuantity());
 
-            // 创建订单
+            // 创建订单（使用数据库中的商品实际价格，防止前端篡改）
+            BigDecimal actualPrice = getActualPrice(product);
             Order order = new Order();
             order.setUserId(request.getUserId());
             order.setProductId(item.getProductId());
             order.setQuantity(item.getQuantity());
-            order.setPrice(item.getPrice());
-            order.setTotalPrice(item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+            order.setPrice(actualPrice);
+            order.setTotalPrice(actualPrice.multiply(BigDecimal.valueOf(item.getQuantity())));
             order.setStatus(0); // 待支付
             order.setRecvName(address.getReceiver());
             order.setRecvPhone(address.getPhone());
@@ -750,4 +798,16 @@ public class OrderService {
 
         LOGGER.info("批量创建订单完成，用户 ID：{}，订单数量：{}", request.getUserId(), request.getItems().size());
     }
-} 
+
+    /**
+     * 获取商品实际售价（考虑折扣）
+     */
+    private BigDecimal getActualPrice(Product product) {
+        if (product.getIsDiscount() != null && product.getIsDiscount() == 1
+                && product.getDiscountPrice() != null
+                && product.getDiscountPrice().compareTo(BigDecimal.ZERO) > 0) {
+            return product.getDiscountPrice();
+        }
+        return product.getPrice();
+    }
+}

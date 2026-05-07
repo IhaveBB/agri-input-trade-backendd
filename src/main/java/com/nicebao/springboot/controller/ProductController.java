@@ -187,9 +187,25 @@ public class ProductController {
      * @date 2026/03/19
      */
     @Operation(summary = "删除商品")
-    @RequiresRole("ADMIN")
+    @RequiresRole("USER")
     @DeleteMapping("/{id}")
     public Result<Void> deleteProduct(@PathVariable Long id) {
+        Long userId = UserContext.getUserId();
+        String role = UserContext.getRole();
+
+        Product product = productService.getProductByIdValue(id);
+        if (product == null) {
+            throw new BusinessException(ErrorCodeEnum.PRODUCT_NOT_FOUND);
+        }
+
+        if (UserRole.isAdmin(role)) {
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "管理员无权删除商品");
+        }
+
+        if (!product.getMerchantId().equals(userId)) {
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权删除其他人的商品");
+        }
+
         productService.deleteProduct(id);
         return Result.success();
     }
@@ -299,8 +315,8 @@ public class ProductController {
      * @author IhaveBB
      * @date 2026/03/19
      */
-    @Operation(summary = "批量删除商品")
-    @RequiresRole("ADMIN")
+    @Operation(summary = "批量删除商品（已禁用）")
+    @RequiresRole("NONE")
     @DeleteMapping("/batch")
     public Result<Void> deleteBatch(@RequestParam List<Long> ids) {
         productService.deleteBatch(ids);

@@ -35,7 +35,7 @@ public class StockController {
      * @date 2026/03/19
      */
     @Operation(summary = "创建入库记录")
-    @RequiresRole({"MERCHANT", "ADMIN"})
+    @RequiresRole("MERCHANT")
     @PostMapping("/in")
     public Result<?> createStockIn(@RequestBody StockIn stockIn) {
         return Result.success(stockService.createStockIn(stockIn));
@@ -51,7 +51,7 @@ public class StockController {
      * @date 2026/03/19
      */
     @Operation(summary = "创建出库记录")
-    @RequiresRole({"MERCHANT", "ADMIN"})
+    @RequiresRole("MERCHANT")
     @PostMapping("/out")
     public Result<?> createStockOut(@RequestBody StockOut stockOut) {
         return Result.success(stockService.createStockOut(stockOut));
@@ -117,7 +117,7 @@ public class StockController {
 
     /**
      * 删除入库记录
-     * 权限：商户或管理员
+     * 权限：商户
      *
      * @param id 入库记录ID
      * @return 操作结果
@@ -125,7 +125,7 @@ public class StockController {
      * @date 2026/03/22
      */
     @Operation(summary = "删除入库记录")
-    @RequiresRole({"MERCHANT", "ADMIN"})
+    @RequiresRole("MERCHANT")
     @DeleteMapping("/in/{id}")
     public Result<?> deleteStockIn(@PathVariable Long id) {
         stockService.deleteStockIn(id);
@@ -134,7 +134,7 @@ public class StockController {
 
     /**
      * 删除出库记录
-     * 权限：商户或管理员
+     * 权限：商户
      *
      * @param id 出库记录ID
      * @return 操作结果
@@ -142,7 +142,7 @@ public class StockController {
      * @date 2026/03/22
      */
     @Operation(summary = "删除出库记录")
-    @RequiresRole({"MERCHANT", "ADMIN"})
+    @RequiresRole("MERCHANT")
     @DeleteMapping("/out/{id}")
     public Result<?> deleteStockOut(@PathVariable Long id) {
         stockService.deleteStockOut(id);
@@ -151,7 +151,7 @@ public class StockController {
 
     /**
      * 作废入库记录
-     * 权限：只有管理员
+     * 权限：商户
      *
      * @param id 入库记录ID
      * @return 操作结果
@@ -159,7 +159,7 @@ public class StockController {
      * @date 2026/03/19
      */
     @Operation(summary = "作废入库记录")
-    @RequiresRole("ADMIN")
+    @RequiresRole("MERCHANT")
     @PutMapping("/in/{id}/invalidate")
     public Result<?> invalidateStockIn(@PathVariable Long id) {
         stockService.invalidateStockIn(id);
@@ -168,7 +168,7 @@ public class StockController {
 
     /**
      * 作废出库记录
-     * 权限：只有管理员
+     * 权限：商户
      *
      * @param id 出库记录ID
      * @return 操作结果
@@ -176,7 +176,7 @@ public class StockController {
      * @date 2026/03/19
      */
     @Operation(summary = "作废出库记录")
-    @RequiresRole("ADMIN")
+    @RequiresRole("MERCHANT")
     @PutMapping("/out/{id}/invalidate")
     public Result<?> invalidateStockOut(@PathVariable Long id) {
         stockService.invalidateStockOut(id);
