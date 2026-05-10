@@ -143,12 +143,8 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
     /**
      * 计算单个商品与用户画像的匹配得分
      * <p>
-     * 复用 FusionRecommendationService 的商品画像数据，
-     * 打分公式与 FusionRecommendationService.computeProfileMatchScore 保持一致：
-     * - 种子(ID=1)： 0.6 × 区域匹配 + 0.4 × 季节匹配
-     * - 农药(ID=2)/肥料(ID=3)： 作物匹配（二元 0/1）
-     * - 饲料(ID=4)/兽药(ID=5): 动物匹配（二元 0/1）
-     * - 农膜(6)/农机(7)等： 中性分 0.5
+     * 复用 FusionRecommendationService 的商品画像数据和画像匹配函数，
+     * 确保新品推荐与融合推荐使用同一套地区、季节、作物、动物匹配规则。
      * 最终：0.9 × 画像得分 + 0.1 × 新鲜度
      * </p>
      *
@@ -166,129 +162,13 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
         // 复用 FusionRecommendationService 获取商品画像
         ProductProfileDTO productProfile = fusionRecommendationService.getProductProfile(product.getId());
 
-        Long topCategoryId = productProfile.getTopCategoryId();
-
-        // 画像维度得分（与 FusionRecommendationService 保持一致）
-        double profileScore;
-        if (topCategoryId != null && topCategoryId == 1L) {
-            // 种子： 0.6 × 区域 + 0.4 × 季节
-            profileScore = computeSeedScore(userProfile, productProfile);
-        } else if (topCategoryId != null && (topCategoryId == 2L || topCategoryId == 3L)) {
-            // 农药/肥料： 作物匹配
-            profileScore = computeCropScore(userProfile, productProfile);
-        } else if (topCategoryId != null && (topCategoryId == 4L || topCategoryId == 5L)) {
-            // 饲料/兽药: 动物匹配
-            profileScore = computeAnimalScore(userProfile, productProfile);
-        } else {
-            profileScore = 0.5;
-        }
+        // 画像维度得分（与融合推荐使用同一个函数）
+        double profileScore = fusionRecommendationService.computeProfileMatchScore(userProfile, productProfile);
 
         // 新品新鲜度（10%）
         double freshnessScore = calculateFreshnessScore(product);
 
         return 0.9 * profileScore + 0.1 * freshnessScore;
-    }
-
-    /**
-     * 种子类：0.6 × 区域匹配 + 0.4 × 季节匹配
-     * <p>
-     * 与 FusionRecommendationService.computeSeedRegionSeasonScore 公式一致
-     * </p>
-     *
-     * @author IhaveBB
-     * @date 2026/03/29
-     */
-    private double computeSeedScore(UserProfileDTO userProfile, ProductProfileDTO productProfile) {
-        List<Long> regionIds = productProfile.getRegionIds();
-        List<String> seasonNames = productProfile.getSeasonNames();
-
-        // 区域维度
-        double regionScore;
-        if (regionIds == null || regionIds.isEmpty() || userProfile.getRegionId() == null) {
-            regionScore = 0.5;
-        } else {
-            boolean regionMatch = regionIds.contains(userProfile.getRegionId())
-                    || regionIds.contains(8L);
-            regionScore = regionMatch ? 1.0 : 0.0;
-        }
-
-        // 季节维度
-        double seasonScore;
-        if (seasonNames == null || seasonNames.isEmpty()) {
-            seasonScore = 0.5;
-        } else {
-            String currentSeason = getCurrentSeason();
-            boolean seasonMatch = seasonNames.contains("全年")
-                    || seasonNames.stream().anyMatch(s -> s.contains(currentSeason));
-            seasonScore = seasonMatch ? 1.0 : 0.0;
-        }
-
-        return 0.6 * regionScore + 0.4 * seasonScore;
-    }
-
-    /**
-     * 农药/肥料：作物匹配（二元 0/1）
-     * <p>
-     * 与 FusionRecommendationService.computeCropMatchScore 公式一致
-     * </p>
-     *
-     * @author IhaveBB
-     * @date 2026/03/29
-     */
-    private double computeCropScore(UserProfileDTO userProfile, ProductProfileDTO productProfile) {
-        List<Long> userCrops = userProfile.getPreferredCropIds();
-        List<Long> productCrops = productProfile.getCropIds();
-
-        if (userCrops == null || userCrops.isEmpty()) {
-            return 0.5;
-        }
-        if (productCrops == null || productCrops.isEmpty()) {
-            return 0.5;
-        }
-
-        boolean hasMatch = userCrops.stream().anyMatch(productCrops::contains);
-        return hasMatch ? 1.0 : 0.0;
-    }
-
-    /**
-     * 饲料/兽药：动物匹配（二元 0/1）
-     * <p>
-     * 与 FusionRecommendationService.computeAnimalMatchScore 公式一致
-     * </p>
-     *
-     * @author IhaveBB
-     * @date 2026/03/29
-     */
-    private double computeAnimalScore(UserProfileDTO userProfile, ProductProfileDTO productProfile) {
-        List<Long> userAnimals = userProfile.getPreferredAnimalIds();
-        List<Long> productAnimals = productProfile.getAnimalIds();
-
-        if (userAnimals == null || userAnimals.isEmpty()) {
-            return 0.5;
-        }
-        if (productAnimals == null || productAnimals.isEmpty()) {
-            return 0.5;
-        }
-
-        boolean hasMatch = userAnimals.stream().anyMatch(productAnimals::contains);
-        return hasMatch ? 1.0 : 0.0;
-    }
-
-    /**
-     * 获取当前季节名称
-     *
-     * @author IhaveBB
-     * @date 2026/03/29
-     */
-    private String getCurrentSeason() {
-        java.time.Month month = java.time.LocalDate.now().getMonth();
-        return switch (month) {
-            case MARCH, APRIL, MAY -> "春";
-            case JUNE, JULY, AUGUST -> "夏";
-            case SEPTEMBER, OCTOBER, NOVEMBER -> "秋";
-            case DECEMBER, JANUARY, FEBRUARY -> "冬";
-            default -> "春";
-        };
     }
 
     /**

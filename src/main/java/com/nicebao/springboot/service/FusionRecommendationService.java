@@ -289,7 +289,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
 
             for (Product product : allProducts) {
                 ProductProfileDTO productProfile = getProductProfile(product.getId());
-                double profileScore = computeProfileScore(userProfile, productProfile, currentSeason);
+                double profileScore = computeProfileMatchScore(userProfile, productProfile, currentSeason);
 
                 if (profileScore <= 0) {
                     filteredCount++;
@@ -1298,7 +1298,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
 
             ProductProfileDTO productProfile = getProductProfile(product.getId());
             Double cfScore = normalizedCfScores.getOrDefault(product.getId(), 0.0);
-            Double profileScore = computeProfileScore(userProfile, productProfile, currentSeason);
+            Double profileScore = computeProfileMatchScore(userProfile, productProfile, currentSeason);
 
             if (profileScore == 0.0) {
                 filteredByProfile++;
@@ -1385,29 +1385,31 @@ public class FusionRecommendationService implements RecommendationStrategy {
     /**
      * 计算画像匹配得分
      * <p>
-     * 使用余弦相似度计算用户画像与商品画像的匹配度
-     * 并应用业务规则约束（地区、季节等）
+     * 根据农资商品类别计算用户画像与商品画像的匹配度。
+     * 该方法作为画像匹配的统一入口，供融合推荐、画像冷启动和新品推荐复用。
      * </p>
+     *
+     * @param userProfile    用户画像
+     * @param productProfile 商品画像
+     * @return 画像匹配得分
      */
-    private double computeProfileScore(UserProfileDTO userProfile,
-                                        ProductProfileDTO productProfile,
-                                        String currentSeason) {
-        // 直接计算画像匹配得分（不再使用硬约束过滤）
-        return computeProfileMatchScore(userProfile, productProfile, currentSeason);
+    public double computeProfileMatchScore(UserProfileDTO userProfile,
+                                           ProductProfileDTO productProfile) {
+        if (userProfile == null || productProfile == null) {
+            return 0.5;
+        }
+        return computeProfileMatchScore(userProfile, productProfile, getCurrentSeason());
     }
 
-    /**
-     * 检查业务规则约束
-     */
     /**
      * 计算画像匹配得分
      * <p>
      * 根据商品一级分类采用不同打分策略：
-     * - 种子(ID=1)：0.6 × 区域匹配 + 0.4 × 季节匹配
+     * - 种子(ID=1)：区域-季节配对匹配
      * - 农药(ID=2)、肥料(ID=3)：作物匹配（有交集=1.0，无交集=0.0）
      * - 饲料(ID=4)、兽药(ID=5)：动物匹配（有交集=1.0，无交集=0.0）
      * - 农膜(ID=6)、农机(ID=7)：中性分 0.5
-     * 信息不全时各维度给 0.5（中性分）
+     * 信息不全时给 0.5（中性分）
      * </p>
      *
      * @author IhaveBB
