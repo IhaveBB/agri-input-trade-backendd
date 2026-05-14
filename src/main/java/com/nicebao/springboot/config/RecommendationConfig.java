@@ -75,7 +75,7 @@ public class RecommendationConfig {
 
     /**
      * 评分行为权重基数
-     * 实际权重 = rating(1-5) × reviewWeight，高分评价贡献更强正向信号
+     * 实际权重 = (rating - 3) × reviewWeight，低分评价额外回扣购买权重
      */
     private Integer reviewWeight = 1;
 
@@ -106,12 +106,6 @@ public class RecommendationConfig {
      * true: 只推荐当前季节适用的商品
      */
     private Boolean enableSeasonConstraint = true;
-
-    /**
-     * 是否启用价格区间匹配
-     * true: 根据用户消费能力推荐对应价格区间的商品
-     */
-    private Boolean enablePriceConstraint = false;
 
     // ==================== 冷启动参数 ====================
 
@@ -160,69 +154,6 @@ public class RecommendationConfig {
      * 热销商品销量阈值（salesCount >= 该值 → isHot=true）
      */
     private Integer hotSalesThreshold = 100;
-
-    // ==================== 画像匹配维度权重 ====================
-
-    /**
-     * 品类偏好匹配权重（0-1，三维权重合计需为1.0）
-     */
-    private Double categoryWeight = 0.4;
-
-    /**
-     * 价格区间匹配权重
-     */
-    private Double priceWeight = 0.3;
-
-    /**
-     * 适用作物匹配权重（农资电商特有维度）
-     */
-    private Double cropWeight = 0.3;
-
-    // ==================== 价格匹配分数 ====================
-
-    /**
-     * 价格邻档匹配得分（HIGH→MEDIUM 或 MEDIUM→LOW 视为近似匹配）
-     */
-    private Double priceNearMatchScore = 0.7;
-
-    /**
-     * 价格跨档匹配得分（LOW→MEDIUM 或 MEDIUM→HIGH）
-     */
-    private Double priceFarMatchScore = 0.3;
-
-    /**
-     * 价格极端不匹配得分（HIGH→LOW 或 LOW→HIGH）
-     */
-    private Double priceNoMatchScore = 0.1;
-
-    // ==================== 作物匹配分数 ====================
-
-    /**
-     * 作物完全不匹配时的得分
-     */
-    private Double cropNoMatchScore = 0.1;
-
-    /**
-     * 作物匹配公式基础分（finalCropScore = cropBaseScore + matchRatio * cropMatchMultiplier）
-     */
-    private Double cropBaseScore = 0.3;
-
-    /**
-     * 作物匹配比例乘数
-     */
-    private Double cropMatchMultiplier = 0.7;
-
-    // ==================== 动物匹配分数 ====================
-
-    /**
-     * 动物匹配公式基础分（finalAnimalScore = animalBaseScore + matchRatio * animalMatchMultiplier）
-     */
-    private Double animalBaseScore = 0.3;
-
-    /**
-     * 动物匹配比例乘数
-     */
-    private Double animalMatchMultiplier = 0.7;
 
     // ==================== 推荐文案生成阈值 ====================
 

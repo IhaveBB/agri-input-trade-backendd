@@ -67,6 +67,7 @@ public class HotProductRecommendationStrategy implements RecommendationStrategy 
 
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Product::getStatus, 1)
+                .gt(Product::getStock, 0)
                 .orderByDesc(Product::getSalesCount)
                 .last("LIMIT " + limit);
 

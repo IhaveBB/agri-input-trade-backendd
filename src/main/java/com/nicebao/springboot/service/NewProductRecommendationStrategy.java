@@ -115,6 +115,7 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
 
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Product::getStatus, 1)
+                .gt(Product::getStock, 0)
                 .gt(Product::getCreatedAt, thresholdTimestamp)
                 .lt(Product::getSalesCount, salesThreshold)
                 .orderByDesc(Product::getCreatedAt);
@@ -133,8 +134,7 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
         List<ProductWithScore> result = new ArrayList<>();
 
         for (Product product : products) {
-            double score = calculateMatchScore(product, userProfile);
-            result.add(new ProductWithScore(product, score));
+            result.add(calculateMatchScore(product, userProfile));
         }
 
         return result;
@@ -145,7 +145,6 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
      * <p>
      * 复用 FusionRecommendationService 的商品画像数据和画像匹配函数，
      * 确保新品推荐与融合推荐使用同一套地区、季节、作物、动物匹配规则。
-     * 最终：0.9 × 画像得分 + 0.1 × 新鲜度
      * </p>
      *
      * @param product     商品
@@ -154,9 +153,9 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
      * @author IhaveBB
      * @date 2026/03/29
      */
-    private double calculateMatchScore(Product product, UserProfileDTO userProfile) {
+    private ProductWithScore calculateMatchScore(Product product, UserProfileDTO userProfile) {
         if (userProfile == null) {
-            return calculateFreshnessScore(product);
+            return new ProductWithScore(product, 0.5, 0.5);
         }
 
         // 复用 FusionRecommendationService 获取商品画像
@@ -164,32 +163,7 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
 
         // 画像维度得分（与融合推荐使用同一个函数）
         double profileScore = fusionRecommendationService.computeProfileMatchScore(userProfile, productProfile);
-
-        // 新品新鲜度（10%）
-        double freshnessScore = calculateFreshnessScore(product);
-
-        return 0.9 * profileScore + 0.1 * freshnessScore;
-    }
-
-    /**
-     * 计算新品新鲜度得分
-     *
-     * @param product 商品
-     * @return 新鲜度得分（0-1）
-     */
-    private double calculateFreshnessScore(Product product) {
-        Timestamp createdAt = product.getCreatedAt();
-        if (createdAt == null) {
-            return 0.5;
-        }
-
-        LocalDateTime createTime = createdAt.toLocalDateTime();
-        LocalDateTime now = LocalDateTime.now();
-
-        long daysSinceCreated = ChronoUnit.DAYS.between(createTime, now);
-        int threshold = recommendationConfig.getNewProductDaysThreshold();
-
-        return Math.max(0, 1.0 - (double) daysSinceCreated / threshold);
+        return new ProductWithScore(product, profileScore, profileScore);
     }
 
     /**
@@ -235,7 +209,7 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
 
             dto.setScore(pws.getScore());
             dto.setCfScore(0.0);
-            dto.setProfileScore(pws.getScore());
+            dto.setProfileScore(pws.getProfileScore());
             dto.setReason("新品推荐");
             dto.setMatchTags(Arrays.asList("新品", "上市" + calculateDaysSinceLaunch(product) + "天"));
 
@@ -262,10 +236,12 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
     private static class ProductWithScore {
         private final Product product;
         private final double score;
+        private final double profileScore;
 
-        public ProductWithScore(Product product, double score) {
+        public ProductWithScore(Product product, double score, double profileScore) {
             this.product = product;
             this.score = score;
+            this.profileScore = profileScore;
         }
 
         public Product getProduct() {
@@ -274,6 +250,10 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
 
         public double getScore() {
             return score;
+        }
+
+        public double getProfileScore() {
+            return profileScore;
         }
     }
 }

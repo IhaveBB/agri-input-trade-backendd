@@ -16,9 +16,9 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 推荐算法离线评估服务
+ * 推荐算法运行监控评估服务
  * <p>
- * 提供多种评估指标计算：
+ * 提供后台管理侧的粗略评估指标计算：
  * - 准确率(Precision)
  * - 召回率(Recall)
  * - F1值
@@ -26,6 +26,11 @@ import java.util.stream.Collectors;
  * - MAP
  * - 覆盖率(Coverage)
  * - 多样性(Diversity)
+ * </p>
+ * <p>
+ * 注意：该服务会直接调用线上推荐策略，并以用户全部已完成购买作为 ground truth，
+ * 没有执行按时间切分的训练集/测试集隔离，因此不适合作为论文离线回放实验结果。
+ * 论文实验请使用 RecommendationOfflinePaperEvaluationTest。
  * </p>
  *
  * @author IhaveBB

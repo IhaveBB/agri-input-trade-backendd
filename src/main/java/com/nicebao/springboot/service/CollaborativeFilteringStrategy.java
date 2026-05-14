@@ -58,6 +58,9 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
     @Resource
     private ReviewMapper reviewMapper;
 
+    @Resource
+    private RecommendationAlgorithmSupport algorithmSupport;
+
     // ==================== 缓存结构 ====================
 
     /**
@@ -121,7 +124,7 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
             Map<Long, Double> cfScores = computeCFScores(userId, interactedProducts);
 
             // 5. 归一化得分
-            Map<Long, Double> normalizedScores = normalizeScores(cfScores);
+            Map<Long, Double> normalizedScores = algorithmSupport.normalizeScores(cfScores);
 
             // 6. 排序并截取Top-N
             List<Map.Entry<Long, Double>> topItems = normalizedScores.entrySet().stream()
@@ -173,7 +176,7 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
             if (order.getUserId() == null || order.getProductId() == null) {
                 continue;
             }
-            addToInteraction(order.getUserId(), order.getProductId(),
+            algorithmSupport.addInteraction(userInteractionMatrix, order.getUserId(), order.getProductId(),
                     recommendationConfig.getPurchaseWeight());
         }
 
@@ -186,7 +189,7 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
             if (favorite.getUserId() == null || favorite.getProductId() == null) {
                 continue;
             }
-            addToInteraction(favorite.getUserId(), favorite.getProductId(),
+            algorithmSupport.addInteraction(userInteractionMatrix, favorite.getUserId(), favorite.getProductId(),
                     recommendationConfig.getFavoriteWeight());
         }
 
@@ -198,7 +201,7 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
             if (cart.getUserId() == null || cart.getProductId() == null) {
                 continue;
             }
-            addToInteraction(cart.getUserId(), cart.getProductId(),
+            algorithmSupport.addInteraction(userInteractionMatrix, cart.getUserId(), cart.getProductId(),
                     recommendationConfig.getCartWeight());
         }
 
@@ -217,14 +220,13 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
                 continue;
             }
             // 停留时长过滤：duration < 5秒视为无效浏览
-            if (click.getDuration() != null && click.getDuration() < 5) {
+            if (!algorithmSupport.isEffectiveClick(click.getDuration())) {
                 continue;
             }
             // 1分钟内重复点击去重
             String dedupKey = click.getUserId() + "_" + click.getProductId();
             LocalDateTime lastTime = lastClickTimeMap.get(dedupKey);
-            if (lastTime != null && click.getCreatedAt() != null
-                    && java.time.Duration.between(lastTime, click.getCreatedAt()).toMinutes() < 1) {
+            if (algorithmSupport.isDuplicateClickWithinOneMinute(lastTime, click.getCreatedAt())) {
                 continue;
             }
             if (click.getCreatedAt() != null) {
@@ -235,9 +237,13 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
             if (currentWeight >= clickWeightCap) {
                 continue;
             }
-            double addWeight = Math.min(recommendationConfig.getClickWeight(), clickWeightCap - currentWeight);
+            double addWeight = algorithmSupport.cappedClickWeight(
+                    currentWeight, recommendationConfig.getClickWeight(), clickWeightCap);
+            if (addWeight <= 0) {
+                continue;
+            }
             clickWeightMap.merge(dedupKey, addWeight, Double::sum);
-            addToInteraction(click.getUserId(), click.getProductId(), addWeight);
+            algorithmSupport.addInteraction(userInteractionMatrix, click.getUserId(), click.getProductId(), addWeight);
         }
 
         // 加载评分行为（双向信号：高分正向，低分负向）
@@ -253,27 +259,15 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
                     || review.getRating() == null || review.getRating() <= 0) {
                 continue;
             }
-            double reviewInteractionWeight = (review.getRating() - 3) * recommendationConfig.getReviewWeight();
-            addToInteraction(review.getUserId(), review.getProductId(), reviewInteractionWeight);
-            if (review.getRating() <= 2) {
-                addToInteraction(review.getUserId(), review.getProductId(),
-                        -recommendationConfig.getPurchaseWeight() * 0.5);
+            double reviewInteractionWeight = algorithmSupport.reviewInteractionWeight(
+                    review.getRating(), recommendationConfig.getReviewWeight());
+            algorithmSupport.addInteraction(userInteractionMatrix, review.getUserId(), review.getProductId(),
+                    reviewInteractionWeight);
+            double penalty = algorithmSupport.lowRatingPurchasePenalty(
+                    review.getRating(), recommendationConfig.getPurchaseWeight());
+            if (penalty < 0) {
+                algorithmSupport.addInteraction(userInteractionMatrix, review.getUserId(), review.getProductId(), penalty);
             }
-        }
-    }
-
-    /**
-     * 添加交互强度到矩阵
-     *
-     * @param userId    用户ID
-     * @param productId 商品ID
-     * @param weight    交互权重（支持小数，用于评分行为：rating × reviewWeight）
-     */
-    private void addToInteraction(Long userId, Long productId, double weight) {
-        Map<Long, Double> userMap = userInteractionMatrix.computeIfAbsent(userId, k -> new HashMap<>());
-        userMap.merge(productId, weight, Double::sum);
-        if (userMap.getOrDefault(productId, 0.0) <= 0) {
-            userMap.remove(productId);
         }
     }
 
@@ -286,86 +280,10 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
         }
 
         itemSimilarityMatrix.clear();
-
-        Set<Long> allProductIds = new HashSet<>();
-        for (Map<Long, Double> userInteractions : userInteractionMatrix.values()) {
-            allProductIds.addAll(userInteractions.keySet());
-        }
-
-        if (allProductIds.isEmpty()) {
-            return;
-        }
-
-        List<Long> productIds = new ArrayList<>(allProductIds);
-
-        // 计算商品模长
-        Map<Long, Double> productNorms = new HashMap<>();
-        for (Long productId : productIds) {
-            double sumSq = 0.0;
-            for (Map<Long, Double> interactions : userInteractionMatrix.values()) {
-                Double strength = interactions.get(productId);
-                if (strength != null) {
-                    sumSq += strength * strength;
-                }
-            }
-            productNorms.put(productId, Math.sqrt(sumSq));
-        }
-
-        // 计算余弦相似度，双向收集到临时 Map，再统一应用 TopK（保证对称矩阵两方向均受约束）
-        Map<Long, Map<Long, Double>> rawSimilarities = new HashMap<>();
-
-        for (int i = 0; i < productIds.size(); i++) {
-            Long productId1 = productIds.get(i);
-
-            for (int j = i + 1; j < productIds.size(); j++) {
-                Long productId2 = productIds.get(j);
-                double similarity = computeCosineSimilarity(productId1, productId2, productNorms);
-
-                if (similarity >= recommendationConfig.getSimilarityThreshold()) {
-                    rawSimilarities.computeIfAbsent(productId1, k -> new HashMap<>())
-                            .put(productId2, similarity);
-                    rawSimilarities.computeIfAbsent(productId2, k -> new HashMap<>())
-                            .put(productId1, similarity);
-                }
-            }
-        }
-
-        // 统一对每个商品应用 TopK，保证两个方向均受约束
-        int topK = recommendationConfig.getTopK();
-        for (Map.Entry<Long, Map<Long, Double>> entry : rawSimilarities.entrySet()) {
-            Map<Long, Double> topKSimilarities = entry.getValue().entrySet().stream()
-                    .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
-                    .limit(topK)
-                    .collect(Collectors.toMap(
-                            Map.Entry::getKey,
-                            Map.Entry::getValue,
-                            (v1, v2) -> v1,
-                            LinkedHashMap::new
-                    ));
-            itemSimilarityMatrix.put(entry.getKey(), topKSimilarities);
-        }
-    }
-
-    private double computeCosineSimilarity(Long productId1, Long productId2,
-                                           Map<Long, Double> productNorms) {
-        double numerator = 0.0;
-
-        for (Map<Long, Double> interactions : userInteractionMatrix.values()) {
-            Double strength1 = interactions.get(productId1);
-            Double strength2 = interactions.get(productId2);
-            if (strength1 != null && strength2 != null) {
-                numerator += strength1 * strength2;
-            }
-        }
-
-        double norm1 = productNorms.getOrDefault(productId1, 0.0);
-        double norm2 = productNorms.getOrDefault(productId2, 0.0);
-
-        if (norm1 == 0 || norm2 == 0) {
-            return 0.0;
-        }
-
-        return numerator / (norm1 * norm2);
+        itemSimilarityMatrix.putAll(algorithmSupport.computeItemSimilarityMatrix(
+                userInteractionMatrix,
+                recommendationConfig.getSimilarityThreshold(),
+                recommendationConfig.getTopK()));
     }
 
     /**
@@ -376,7 +294,8 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
         Map<Long, Double> userInteractions = userInteractionMatrix.getOrDefault(userId, new HashMap<>());
 
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Product::getStatus, 1);
+        wrapper.eq(Product::getStatus, 1)
+                .gt(Product::getStock, 0);
         List<Product> allProducts = productMapper.selectList(wrapper);
 
         for (Product product : allProducts) {
@@ -384,61 +303,11 @@ public class CollaborativeFilteringStrategy implements RecommendationStrategy {
                 continue;
             }
 
-            double score = computeCFScore(product.getId(), userInteractions);
+            double score = algorithmSupport.computeCfScore(product.getId(), userInteractions, itemSimilarityMatrix);
             scores.put(product.getId(), score);
         }
 
         return scores;
-    }
-
-    private double computeCFScore(Long targetProductId, Map<Long, Double> userInteractions) {
-        double numerator = 0.0;
-        double denominator = 0.0;
-
-        Map<Long, Double> similarItems = itemSimilarityMatrix.get(targetProductId);
-        if (similarItems == null || similarItems.isEmpty()) {
-            return 0.0;
-        }
-
-        for (Map.Entry<Long, Double> entry : similarItems.entrySet()) {
-            Double similarity = entry.getValue();
-            Double interactionStrength = userInteractions.get(entry.getKey());
-            if (interactionStrength != null) {
-                numerator += similarity * interactionStrength;
-                denominator += Math.abs(similarity);
-            }
-        }
-
-        return denominator > 0 ? numerator / denominator : 0.0;
-    }
-
-    /**
-     * Min-Max归一化
-     */
-    private Map<Long, Double> normalizeScores(Map<Long, Double> scores) {
-        Map<Long, Double> normalized = new HashMap<>();
-
-        if (scores.isEmpty()) {
-            return normalized;
-        }
-
-        double minScore = Collections.min(scores.values());
-        double maxScore = Collections.max(scores.values());
-        double range = maxScore - minScore;
-
-        if (range == 0) {
-            // 所有CF得分相同（通常全为0，冷启动场景），统一置0避免虚假信号
-            for (Long productId : scores.keySet()) {
-                normalized.put(productId, 0.0);
-            }
-        } else {
-            for (Map.Entry<Long, Double> entry : scores.entrySet()) {
-                double normalizedScore = (entry.getValue() - minScore) / range;
-                normalized.put(entry.getKey(), normalizedScore);
-            }
-        }
-
-        return normalized;
     }
 
     /**

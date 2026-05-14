@@ -75,7 +75,6 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/api/doc.html","/api/webjars/**","/api/favicon.ico").excludePathPatterns("/api/checkIn/**")
                 .excludePathPatterns("/api/alipay/notify") // 支付宝回调接口不需要拦截（支付宝服务器调用，有验签机制）
                 .excludePathPatterns("/api/category/tree", "/api/category/all", "/api/category/top") // 分类接口不需要拦截（注册和首页都需要）
-                .excludePathPatterns("/api/recommendation/**") // 推荐接口不需要拦截（未登录用户也可使用，内部按需判断登录状态）
                 .excludePathPatterns("/api/product/page") // 商品列表接口不需要拦截（未登录用户首页浏览商品）
                 .excludePathPatterns("/api/carousel/active") // 轮播图接口不需要拦截（首页展示）
                 .excludePathPatterns("/api/notice/page"); // 公告接口不需要拦截（首页展示）
