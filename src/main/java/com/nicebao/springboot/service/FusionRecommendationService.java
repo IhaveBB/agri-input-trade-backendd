@@ -806,8 +806,9 @@ public class FusionRecommendationService implements RecommendationStrategy {
     /**
      * 计算用户偏好作物
      * <p>
-     * 优先从用户注册信息获取感兴趣作物，并完整保留用户显式填写的偏好；
-     * 再结合购买历史统计补充作物偏好，历史偏好最多补充5个。
+     * 仅使用用户注册信息中显式选择的感兴趣作物。
+     * 历史购买行为已经进入协同过滤交互矩阵，这里不再把购买过商品的作物反向补充到画像中，
+     * 避免用户画像与协同过滤信号重复计算。
      * </p>
      */
     private void computeUserPreferredCrops(Long userId,
@@ -815,9 +816,8 @@ public class FusionRecommendationService implements RecommendationStrategy {
                                            User user,
                                            java.time.LocalDateTime cutoffTime) {
         Set<Long> preferredCrops = new LinkedHashSet<>(); // 使用Set去重，保持顺序
-        int historySupplementLimit = 5;
 
-        // 1. 优先从用户注册信息获取感兴趣作物
+        // 1. 从用户注册信息获取感兴趣作物，完整保留用户显式填写的偏好
         if (user != null && user.getInterestedCrops() != null && !user.getInterestedCrops().isEmpty()) {
             String[] cropIds = user.getInterestedCrops().split(",");
             for (String cropId : cropIds) {
@@ -830,51 +830,25 @@ public class FusionRecommendationService implements RecommendationStrategy {
             log.debug("[用户画像] 从注册信息获取{}个感兴趣作物", preferredCrops.size());
         }
 
-        // 2. 结合购买历史统计作物偏好
-        LambdaQueryWrapper<Order> orderWrapper = new LambdaQueryWrapper<>();
-        orderWrapper.eq(Order::getUserId, userId)
-                .eq(Order::getStatus, 3); // 已完成订单
-        if (cutoffTime != null) {
-            orderWrapper.lt(Order::getCreatedAt, java.sql.Timestamp.valueOf(cutoffTime));
-        }
-        List<Order> orders = orderMapper.selectList(orderWrapper);
+        /*
+         * 已停用：不再根据历史购买商品反推作物偏好。
+         *
+         * 原设计曾计划：
+         * 1. 优先读取历史购买商品的 product_crop 关联作物；
+         * 2. 如果商品没有 product_crop，且商品属于种子类，则再从商品分类或扩展属性中推断作物；
+         * 3. 将推断出的作物补充到 preferredCropIds。
+         *
+         * 当前论文和线上算法统一采用更清晰的口径：
+         * - 用户画像中的作物偏好只来自用户自己填写的 interested_crops；
+         * - 历史购买、收藏、加购、点击、评价等行为只进入协同过滤交互矩阵；
+         * - 避免历史购买既影响 CF 得分，又再次影响画像得分。
+         */
 
-        if (!orders.isEmpty()) {
-            Map<Long, Integer> cropCount = new HashMap<>();
-
-            for (Order order : orders) {
-                if (order.getProductId() == null) {
-                    continue;
-                }
-
-                // 查询商品关联的作物（农药/化肥/饲料等适用作物）
-                LambdaQueryWrapper<ProductCrop> wrapper =
-                        new LambdaQueryWrapper<>();
-                wrapper.eq(ProductCrop::getProductId, order.getProductId());
-                List<ProductCrop> productCrops =
-                        productCropMapper.selectList(wrapper);
-
-                for (ProductCrop pc : productCrops) {
-                    if (pc.getCategoryId() != null) {
-                        cropCount.merge(pc.getCategoryId(), 1, Integer::sum);
-                    }
-                }
-            }
-
-            // 按购买次数排序，补充到偏好列表（保留注册信息的优先级）
-            cropCount.entrySet().stream()
-                    .sorted(Map.Entry.<Long, Integer>comparingByValue().reversed())
-                    .filter(entry -> !preferredCrops.contains(entry.getKey()))
-                    .limit(historySupplementLimit)
-                    .map(Map.Entry::getKey)
-                    .forEach(preferredCrops::add);
-        }
-
-        // 3. 设置结果：显式填写的作物全部保留，历史购买推断出的作物最多补充5个
+        // 2. 设置结果：用户显式填写的作物全部保留
         List<Long> preferredCropIds = new ArrayList<>(preferredCrops);
         profile.setPreferredCropIds(preferredCropIds);
 
-        // 4. 加载作物名称
+        // 3. 加载作物名称
         List<String> cropNames = new ArrayList<>();
         if (!preferredCropIds.isEmpty()) {
             LambdaQueryWrapper<Category> categoryWrapper = new LambdaQueryWrapper<>();

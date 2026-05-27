@@ -50,6 +50,8 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 论文推荐实验离线评估。
@@ -165,13 +167,14 @@ class RecommendationOfflinePaperEvaluationTest {
         /*
          * 四、分别计算四类算法的候选商品分数。
          *
-         * 热门推荐使用商品 salesCount，与 HotProductRecommendationStrategy 保持一致。
+         * 热门推荐只使用训练矩阵中的历史热度，不能使用商品当前 salesCount，
+         * 因为 salesCount 已包含隐藏测试购买后的销量，会造成评估泄露。
          * 协同过滤推荐使用公共组件计算 Item-CF 预测分和 Min-Max 归一化。
          * 画像匹配推荐直接复用 FusionRecommendationService 的用户画像、商品画像和
          * 画像匹配函数，并固定实验季节为春，避免结果随运行日期漂移。
          * 融合推荐使用公共组件中的线性融合函数，theta 取系统配置默认值 0.7。
          */
-        Map<Long, Double> popularity = computeHotScores(products);
+        Map<Long, Double> popularity = computeHotScores(trainMatrix);
         Map<Long, Map<Long, Double>> profileScores = computeProfileScores(tests, products);
         Map<Long, Map<Long, Double>> cfScores = computeCfScores(tests, products, trainMatrix, itemSimilarity);
 
@@ -182,6 +185,7 @@ class RecommendationOfflinePaperEvaluationTest {
          * 商品数、订单数或训练交互对数变化，测试会失败，提醒重新生成表格和图。
          */
         assertFixedPaperDataset(products, tests, trainMatrix);
+        assertDatasetUsability(tests, trainMatrix, profileScores);
 
         Map<String, Map<Integer, MetricSummary>> allResults = new LinkedHashMap<>();
         allResults.put("热门推荐", evaluate(rankPopular(tests, products, popularity, trainMatrix), tests, productMap));
@@ -394,11 +398,12 @@ class RecommendationOfflinePaperEvaluationTest {
         return eventTime.isBefore(test.testTime()) && !Objects.equals(productId, test.testProductId());
     }
 
-    private Map<Long, Double> computeHotScores(List<Product> products) {
+    private Map<Long, Double> computeHotScores(Map<Long, Map<Long, Double>> trainMatrix) {
         Map<Long, Double> scores = new HashMap<>();
-        for (Product product : products) {
-            // 热门推荐基线使用商品销量字段，与 HotProductRecommendationStrategy 保持一致。
-            scores.put(product.getId(), product.getSalesCount() != null ? product.getSalesCount().doubleValue() : 0.0);
+        for (Map<Long, Double> userInteractions : trainMatrix.values()) {
+            for (Map.Entry<Long, Double> entry : userInteractions.entrySet()) {
+                scores.merge(entry.getKey(), entry.getValue(), Double::sum);
+            }
         }
         return scores;
     }
@@ -569,6 +574,32 @@ class RecommendationOfflinePaperEvaluationTest {
         assertEquals(60, orders, "论文评估订单数发生变化，请重新生成表格");
         assertEquals(48, completedOrders, "论文评估已完成订单数发生变化，请重新生成表格");
         assertEquals(35, trainPairs, "论文评估训练用户-商品交互对数发生变化，请重新生成表格");
+    }
+
+    private void assertDatasetUsability(List<TestCase> tests,
+                                        Map<Long, Map<Long, Double>> trainMatrix,
+                                        Map<Long, Map<Long, Double>> profileScores) {
+        /*
+         * 数据可用性门槛：
+         * 1. 每个评估用户都必须有历史训练行为；
+         * 2. 隐藏测试商品不能出现在该用户训练矩阵中；
+         * 3. 隐藏测试商品必须能被用户画像规则给出正向或中性解释。
+         *
+         * 这三个断言用于防止“随意随机购买”或“答案泄露”进入论文实验。
+         */
+        for (TestCase test : tests) {
+            Map<Long, Double> userTrain = trainMatrix.getOrDefault(test.userId(), Map.of());
+            assertFalse(userTrain.isEmpty(),
+                    "评估用户 " + test.userId() + " 没有训练历史，无法验证推荐算法");
+            assertFalse(userTrain.containsKey(test.testProductId()),
+                    "评估用户 " + test.userId() + " 的隐藏测试商品泄露到训练矩阵");
+
+            double hiddenProfileScore = profileScores
+                    .getOrDefault(test.userId(), Map.of())
+                    .getOrDefault(test.testProductId(), 0.0);
+            assertTrue(hiddenProfileScore > 0.0,
+                    "评估用户 " + test.userId() + " 的隐藏测试商品无法由画像规则解释");
+        }
     }
 
     private void printMainResultTable(Map<String, Map<Integer, MetricSummary>> results) {

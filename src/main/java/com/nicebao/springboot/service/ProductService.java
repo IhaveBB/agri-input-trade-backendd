@@ -396,9 +396,9 @@ public class ProductService {
             @CacheEvict(value = "products", allEntries = true)
     })
     public void updateBatchStatus(List<Long> ids, Integer status) {
-        // 检查状态值是否有效（0-待审核，1-下架，2-上架）
-        if (status != 0 && status != 1 && status != 2) {
-            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "无效的商品状态值，合法值：0-待审核，1-下架，2-上架");
+        // 检查状态值是否有效（0-下架，1-上架）
+        if (status != 0 && status != 1) {
+            throw new BusinessException(ErrorCodeEnum.PARAM_ERROR, "无效的商品状态值，合法值：0-下架，1-上架");
         }
 
         // 检查商品是否存在
