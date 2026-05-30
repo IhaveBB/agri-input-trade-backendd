@@ -17,6 +17,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,6 +64,7 @@ public class ProductExtService {
     /**
      * 创建商品（含扩展信息）
      */
+    @CacheEvict(value = {"productPages", "productExts", "products"}, allEntries = true)
     @Transactional
     public ProductVO createProduct(ProductCreateDTO dto, Long merchantId) {
         // 1. 保存商品主信息
@@ -103,6 +106,7 @@ public class ProductExtService {
     /**
      * 更新商品（含扩展信息）
      */
+    @CacheEvict(value = {"productPages", "productExts", "products"}, allEntries = true)
     @Transactional
     public ProductVO updateProduct(Long id, ProductCreateDTO dto) {
         Product existingProduct = productMapper.selectById(id);
@@ -170,6 +174,7 @@ public class ProductExtService {
     /**
      * 获取商品详情（含扩展信息）
      */
+    @Cacheable(value = "productExts", key = "#id")
     public ProductVO getProductWithExt(Long id) {
         Product product = productMapper.selectById(id);
         if (product == null) {

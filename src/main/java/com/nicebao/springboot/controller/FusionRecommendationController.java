@@ -128,6 +128,17 @@ public class FusionRecommendationController {
     }
 
     /**
+     * 获取推荐算法调试数据（演示用）
+     * 返回交互矩阵、相似度矩阵、算法参数等
+     */
+    @Operation(summary = "获取算法调试数据", description = "返回交互矩阵、相似度矩阵和算法参数（登录用户可用）")
+    @RequiresRole
+    @GetMapping("/debug")
+    public Result<Map<String, Object>> getDebugInfo() {
+        return Result.success(recommendationService.getDebugInfo());
+    }
+
+    /**
      * 获取商品画像
      * <p>
      * 查看指定商品的画像信息，包括价格区间、适用地区/季节等

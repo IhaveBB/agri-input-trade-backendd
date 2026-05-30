@@ -67,6 +67,7 @@ public class ProductService {
      */
     @Caching(evict = {
             @CacheEvict(value = "productPages", allEntries = true),
+            @CacheEvict(value = "productExts", allEntries = true),
             @CacheEvict(value = "products", allEntries = true)
     })
     public Product createProduct(Product product) {
@@ -88,6 +89,7 @@ public class ProductService {
      */
     @Caching(evict = {
             @CacheEvict(value = "productPages", allEntries = true),
+            @CacheEvict(value = "productExts", allEntries = true),
             @CacheEvict(value = "products", allEntries = true)
     })
     public Product updateProduct(Long id, Product product) {
@@ -123,6 +125,7 @@ public class ProductService {
      */
     @Caching(evict = {
             @CacheEvict(value = "productPages", allEntries = true),
+            @CacheEvict(value = "productExts", allEntries = true),
             @CacheEvict(value = "products", allEntries = true)
     })
     public void deleteProduct(Long id) {
@@ -312,6 +315,7 @@ public class ProductService {
      */
     @Caching(evict = {
             @CacheEvict(value = "productPages", allEntries = true),
+            @CacheEvict(value = "productExts", allEntries = true),
             @CacheEvict(value = "products", allEntries = true)
     })
     public void updateProductStatus(Long id, Integer status) {
@@ -335,6 +339,7 @@ public class ProductService {
      */
     @Caching(evict = {
             @CacheEvict(value = "productPages", allEntries = true),
+            @CacheEvict(value = "productExts", allEntries = true),
             @CacheEvict(value = "products", allEntries = true)
     })
     public void deleteBatch(List<Long> ids) {
@@ -393,6 +398,7 @@ public class ProductService {
     @Transactional(rollbackFor = Exception.class)
     @Caching(evict = {
             @CacheEvict(value = "productPages", allEntries = true),
+            @CacheEvict(value = "productExts", allEntries = true),
             @CacheEvict(value = "products", allEntries = true)
     })
     public void updateBatchStatus(List<Long> ids, Integer status) {

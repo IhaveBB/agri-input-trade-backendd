@@ -36,6 +36,8 @@ public class RecommendationAlgorithmSupport {
         if (matrix == null || userId == null || productId == null) {
             return;
         }
+        // 交互矩阵按“用户 -> 商品 -> 交互强度”存储。
+        // 同一用户对同一商品的多种行为会累加，例如收藏(2)+加购(3)=5。
         Map<Long, Double> userMap = matrix.computeIfAbsent(userId, ignored -> new HashMap<>());
         userMap.merge(productId, weight, Double::sum);
         if (userMap.getOrDefault(productId, 0.0) <= 0) {
@@ -124,6 +126,7 @@ public class RecommendationAlgorithmSupport {
             return Map.of();
         }
 
+        // 水稻 = [用户A强度, 用户B强度, 用户C强度, ...]。
         Map<Long, Double> productNorms = computeProductNorms(userInteractionMatrix, allProductIds);
         ArrayList<Long> productIds = new ArrayList<>(allProductIds);
         Map<Long, Map<Long, Double>> rawSimilarities = new HashMap<>();
@@ -132,6 +135,7 @@ public class RecommendationAlgorithmSupport {
             Long productId1 = productIds.get(i);
             for (int j = i + 1; j < productIds.size(); j++) {
                 Long productId2 = productIds.get(j);
+                // 对每一对商品计算余弦相似度：共同被同一批用户交互得越多，相似度越高。
                 double similarity = computeCosineSimilarity(
                         productId1, productId2, productNorms, userInteractionMatrix);
                 if (similarity >= similarityThreshold) {
@@ -145,6 +149,7 @@ public class RecommendationAlgorithmSupport {
 
         Map<Long, Map<Long, Double>> topKSimilarities = new HashMap<>();
         for (Map.Entry<Long, Map<Long, Double>> entry : rawSimilarities.entrySet()) {
+            // 每个商品只保留 TopK 个最相似商品，避免相似度矩阵过大，也减少弱相关噪声。
             Map<Long, Double> values = entry.getValue().entrySet().stream()
                     .sorted(Map.Entry.<Long, Double>comparingByValue().reversed()
                             .thenComparing(Map.Entry::getKey))
@@ -170,6 +175,7 @@ public class RecommendationAlgorithmSupport {
                     sumSquares += weight * weight;
                 }
             }
+            // 范数用于余弦相似度分母，防止高热度商品仅因交互多就被认为相似。
             productNorms.put(productId, Math.sqrt(sumSquares));
         }
         return productNorms;
@@ -184,6 +190,7 @@ public class RecommendationAlgorithmSupport {
             Double weight1 = userInteractions.get(productId1);
             Double weight2 = userInteractions.get(productId2);
             if (weight1 != null && weight2 != null) {
+                // 只有同一个用户同时交互过两个商品时，才会对这两个商品的相似度产生贡献。
                 numerator += weight1 * weight2;
             }
         }
@@ -212,6 +219,7 @@ public class RecommendationAlgorithmSupport {
         for (Map.Entry<Long, Double> entry : similarItems.entrySet()) {
             Double interactionStrength = userInteractions.get(entry.getKey());
             if (interactionStrength != null) {
+                // 候选商品与用户历史商品越相似，且用户对历史商品交互越强，CF 得分越高。
                 numerator += entry.getValue() * interactionStrength;
                 denominator += Math.abs(entry.getValue());
             }
@@ -236,6 +244,7 @@ public class RecommendationAlgorithmSupport {
 
         Map<Long, Double> normalized = new HashMap<>();
         for (Map.Entry<Long, Double> entry : scores.entrySet()) {
+            // 在当前用户的候选商品内部做 Min-Max 归一化，便于和 0~1 的画像得分融合。
             normalized.put(entry.getKey(), range > 0 ? (entry.getValue() - minScore) / range : 0.0);
         }
         return normalized;
@@ -247,6 +256,7 @@ public class RecommendationAlgorithmSupport {
     public double computeFusionScore(double theta,
                                      double normalizedCfScore,
                                      double profileScore) {
+        // theta 默认 0.7：协同过滤负责发现潜在兴趣，画像得分负责做农资场景修正。
         return theta * normalizedCfScore + (1.0 - theta) * profileScore;
     }
 }

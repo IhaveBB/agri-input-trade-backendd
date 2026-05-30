@@ -85,8 +85,9 @@ public class NewProductRecommendationStrategy implements RecommendationStrategy 
         // 2. 基于用户画像计算匹配得分
         List<ProductWithScore> scoredProducts = calculateMatchScores(newProducts, userProfile);
 
-        // 3. 排序并截取Top-N
+        // 3. 过滤掉画像不匹配的商品，排序并截取Top-N
         List<ProductWithScore> topProducts = scoredProducts.stream()
+                .filter(pws -> pws.getProfileScore() > 0)
                 .sorted(Comparator.comparing(ProductWithScore::getScore).reversed())
                 .limit(limit)
                 .collect(Collectors.toList());

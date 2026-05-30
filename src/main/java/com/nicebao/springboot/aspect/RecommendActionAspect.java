@@ -10,6 +10,7 @@ import com.nicebao.springboot.entity.Cart;
 import com.nicebao.springboot.entity.Favorite;
 import com.nicebao.springboot.entity.Order;
 import com.nicebao.springboot.entity.Product;
+import com.nicebao.springboot.entity.vo.ProductVO;
 import com.nicebao.springboot.mapper.OrderMapper;
 import com.nicebao.springboot.mapper.ProductMapper;
 import com.nicebao.springboot.service.FusionRecommendationService;
@@ -48,7 +49,8 @@ public class RecommendActionAspect {
     /**
      * 商品详情切入点 - 用户查看商品详情时记录点击
      */
-    @Pointcut("execution(* com.nicebao.springboot.service.ProductService.getProductById(..))")
+    @Pointcut("execution(* com.nicebao.springboot.controller.ProductController.getProductById(..)) || " +
+            "execution(* com.nicebao.springboot.controller.ProductController.getProductWithExt(..))")
     public void productDetailPointcut() {}
 
     /**
@@ -83,33 +85,19 @@ public class RecommendActionAspect {
         Object result = joinPoint.proceed();
 
         try {
-            // 获取商品ID（第一个参数）
-            Object[] args = joinPoint.getArgs();
-            if (args.length > 0 && args[0] instanceof Long) {
-                Long productId = (Long) args[0];
-                Long userId = UserContext.getUserId();
+            Long productId = getFirstLongArg(joinPoint);
+            Long userId = UserContext.getUserId();
+            Long categoryId = extractCategoryId(unwrapResult(result));
 
-                if (userId != null && productId != null) {
-                    // 从返回结果中获取categoryId
-                    if (result != null && result instanceof Result) {
-                        Result<?> resultObj = (Result<?>) result;
-                        Object data = resultObj.getData();
-                        if (data instanceof Product) {
-                            Product product = (Product) data;
-                            Long categoryId = product.getCategoryId();
+            if (userId != null && productId != null) {
+                String source = fusionRecommendationService.isProductRecommended(userId, productId)
+                        ? "RECOMMEND" : "NATURAL";
 
-                            // 判断来源：如果商品在用户的推荐列表中，则标记为 RECOMMEND
-                            String source = fusionRecommendationService.isProductRecommended(userId, productId)
-                                    ? "RECOMMEND" : "NATURAL";
-
-                            recommendActionService.recordClick(
-                                    userId, productId, categoryId,
-                                    source, "PRODUCT_DETAIL", null, null
-                            );
-                            LOGGER.debug("[埋点AOP] 用户{}点击商品{}，来源：{}", userId, productId, source);
-                        }
-                    }
-                }
+                recommendActionService.recordClick(
+                        userId, productId, categoryId,
+                        source, "PRODUCT_DETAIL", null, null
+                );
+                LOGGER.debug("[埋点AOP] 用户{}点击商品{}，来源：{}", userId, productId, source);
             }
         } catch (Exception e) {
             // 埋点失败只记录日志，不影响主业务
@@ -134,36 +122,22 @@ public class RecommendActionAspect {
 
         // 埋点逻辑放在try-catch中，确保埋点失败不影响主业务
         try {
-            if (result != null && result instanceof Result) {
-                Result<?> resultObj = (Result<?>) result;
-                Object data = resultObj.getData();
+            Object data = unwrapResult(result);
+            if (data instanceof Favorite favorite) {
+                if (favorite.getUserId() != null
+                        && favorite.getProductId() != null
+                        && Integer.valueOf(1).equals(favorite.getStatus())) {
+                    Long categoryId = findProductCategoryId(favorite.getProductId());
+                    String source = fusionRecommendationService.isProductRecommended(favorite.getUserId(), favorite.getProductId())
+                            ? "RECOMMEND" : "NATURAL";
 
-                if (data instanceof Favorite) {
-                    Favorite favorite = (Favorite) data;
-                    if (favorite.getUserId() != null && favorite.getProductId() != null) {
-                        // 查询商品获取categoryId
-                        Long categoryId = null;
-                        try {
-                            Product product = productMapper.selectById(favorite.getProductId());
-                            if (product != null) {
-                                categoryId = product.getCategoryId();
-                            }
-                        } catch (Exception e) {
-                            LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
-                        }
-
-                        // 判断来源：如果商品在用户的推荐列表中，则标记为 RECOMMEND
-                        String source = fusionRecommendationService.isProductRecommended(favorite.getUserId(), favorite.getProductId())
-                                ? "RECOMMEND" : "NATURAL";
-
-                        recommendActionService.recordCollect(
-                                favorite.getUserId(),
-                                favorite.getProductId(),
-                                categoryId,
-                                source, "PRODUCT_DETAIL", null, null
-                        );
-                        LOGGER.debug("[埋点AOP] 用户{}收藏商品{}，来源：{}", favorite.getUserId(), favorite.getProductId(), source);
-                    }
+                    recommendActionService.recordCollect(
+                            favorite.getUserId(),
+                            favorite.getProductId(),
+                            categoryId,
+                            source, "PRODUCT_DETAIL", null, null
+                    );
+                    LOGGER.debug("[埋点AOP] 用户{}收藏商品{}，来源：{}", favorite.getUserId(), favorite.getProductId(), source);
                 }
             }
         } catch (Exception e) {
@@ -189,36 +163,20 @@ public class RecommendActionAspect {
 
         // 埋点逻辑放在try-catch中，确保埋点失败不影响主业务
         try {
-            if (result != null && result instanceof Result) {
-                Result<?> resultObj = (Result<?>) result;
-                Object data = resultObj.getData();
+            Object data = unwrapResult(result);
+            if (data instanceof Cart cart) {
+                if (cart.getUserId() != null && cart.getProductId() != null) {
+                    Long categoryId = findProductCategoryId(cart.getProductId());
+                    String source = fusionRecommendationService.isProductRecommended(cart.getUserId(), cart.getProductId())
+                            ? "RECOMMEND" : "NATURAL";
 
-                if (data instanceof Cart) {
-                    Cart cart = (Cart) data;
-                    if (cart.getUserId() != null && cart.getProductId() != null) {
-                        // 查询商品获取categoryId
-                        Long categoryId = null;
-                        try {
-                            Product product = productMapper.selectById(cart.getProductId());
-                            if (product != null) {
-                                categoryId = product.getCategoryId();
-                            }
-                        } catch (Exception e) {
-                            LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
-                        }
-
-                        // 判断来源：如果商品在用户的推荐列表中，则标记为 RECOMMEND
-                        String source = fusionRecommendationService.isProductRecommended(cart.getUserId(), cart.getProductId())
-                                ? "RECOMMEND" : "NATURAL";
-
-                        recommendActionService.recordCart(
-                                cart.getUserId(),
-                                cart.getProductId(),
-                                categoryId,
-                                source, "PRODUCT_DETAIL", null, null
-                        );
-                        LOGGER.debug("[埋点AOP] 用户{}加购商品{}，来源：{}", cart.getUserId(), cart.getProductId(), source);
-                    }
+                    recommendActionService.recordCart(
+                            cart.getUserId(),
+                            cart.getProductId(),
+                            categoryId,
+                            source, "PRODUCT_DETAIL", null, null
+                    );
+                    LOGGER.debug("[埋点AOP] 用户{}加购商品{}，来源：{}", cart.getUserId(), cart.getProductId(), source);
                 }
             }
         } catch (Exception e) {
@@ -288,5 +246,37 @@ public class RecommendActionAspect {
         }
 
         return result;
+    }
+
+    private Long getFirstLongArg(ProceedingJoinPoint joinPoint) {
+        Object[] args = joinPoint.getArgs();
+        return args.length > 0 && args[0] instanceof Long ? (Long) args[0] : null;
+    }
+
+    private Object unwrapResult(Object result) {
+        if (result instanceof Result<?> resultObj) {
+            return resultObj.getData();
+        }
+        return result;
+    }
+
+    private Long extractCategoryId(Object data) {
+        if (data instanceof Product product) {
+            return product.getCategoryId();
+        }
+        if (data instanceof ProductVO productVO) {
+            return productVO.getCategoryId();
+        }
+        return null;
+    }
+
+    private Long findProductCategoryId(Long productId) {
+        try {
+            Product product = productMapper.selectById(productId);
+            return product != null ? product.getCategoryId() : null;
+        } catch (Exception e) {
+            LOGGER.warn("[埋点AOP] 查询商品categoryId失败: {}", e.getMessage());
+            return null;
+        }
     }
 }

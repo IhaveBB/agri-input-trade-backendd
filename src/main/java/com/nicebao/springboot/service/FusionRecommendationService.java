@@ -119,9 +119,9 @@ public class FusionRecommendationService implements RecommendationStrategy {
 
     /**
      * 用户画像缓存
-     * Key: userId, Value: UserProfileDTO
+     * Key: userId, Value: 带创建时间的 UserProfileDTO
      */
-    private final Map<Long, UserProfileDTO> userProfileCache = new ConcurrentHashMap<>();
+    private final Map<Long, CachedUserProfile> userProfileCache = new ConcurrentHashMap<>();
 
     /**
      * 商品画像缓存
@@ -165,6 +165,19 @@ public class FusionRecommendationService implements RecommendationStrategy {
 
         public Double getFinalScore() {
             return finalScore;
+        }
+    }
+
+    /**
+     * 内部类：用户画像缓存项
+     */
+    private static class CachedUserProfile {
+        private final UserProfileDTO profile;
+        private final long cachedAtMillis;
+
+        private CachedUserProfile(UserProfileDTO profile, long cachedAtMillis) {
+            this.profile = profile;
+            this.cachedAtMillis = cachedAtMillis;
         }
     }
 
@@ -214,6 +227,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
             UserProfileDTO userProfile = buildUserProfile(userId);
 
             // 4. 获取用户已交互的商品集合
+            // 这些商品只作为“兴趣来源”参与 CF 计算，不再作为候选推荐，避免重复推荐。
             Set<Long> interactedProducts = userInteractionMatrix.getOrDefault(userId, new HashMap<>()).keySet();
 
             // 5. 对每个未交互商品计算推荐得分
@@ -371,13 +385,94 @@ public class FusionRecommendationService implements RecommendationStrategy {
     }
 
     /**
+     * 获取推荐算法调试数据（演示用）
+     */
+    public Map<String, Object> getDebugInfo() {
+        Map<String, Object> debug = new LinkedHashMap<>();
+
+        // 1. 算法参数
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("融合权重theta", recommendationConfig.getTheta());
+        params.put("融合公式", "最终得分 = theta × CF评分 + (1-theta) × 画像评分");
+        params.put("相似度阈值", recommendationConfig.getSimilarityThreshold());
+        params.put("Top-K相似物品数", recommendationConfig.getTopK());
+        params.put("当前季节", getCurrentSeason());
+        params.put("行为权重-点击", recommendationConfig.getClickWeight());
+        params.put("行为权重-收藏", recommendationConfig.getFavoriteWeight());
+        params.put("行为权重-加购", recommendationConfig.getCartWeight());
+        params.put("行为权重-购买", recommendationConfig.getPurchaseWeight());
+        params.put("行为权重-评分基数", recommendationConfig.getReviewWeight());
+        debug.put("algorithmParams", params);
+
+        // 2. 矩阵统计
+        Map<String, Object> matrixStats = new LinkedHashMap<>();
+        matrixStats.put("交互矩阵-用户数", userInteractionMatrix.size());
+        matrixStats.put("交互矩阵-总交互记录数", userInteractionMatrix.values().stream().mapToInt(Map::size).sum());
+        matrixStats.put("相似度矩阵-商品数", itemSimilarityMatrix.size());
+        matrixStats.put("相似度矩阵-总相似对数", itemSimilarityMatrix.values().stream().mapToInt(Map::size).sum());
+        matrixStats.put("矩阵最后重建时间", new Date(matrixLastRefreshTime));
+        debug.put("matrixStats", matrixStats);
+
+        // 3. 交互矩阵摘要（取前10个用户的交互数据）
+        Map<String, Map<String, Double>> interactionSummary = new LinkedHashMap<>();
+        userInteractionMatrix.entrySet().stream().limit(10).forEach(entry -> {
+            Map<String, Double> productScores = new LinkedHashMap<>();
+            entry.getValue().entrySet().stream()
+                    .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
+                    .limit(10)
+                    .forEach(e -> productScores.put("商品" + e.getKey(), Math.round(e.getValue() * 100.0) / 100.0));
+            interactionSummary.put("用户" + entry.getKey(), productScores);
+        });
+        debug.put("interactionMatrix", interactionSummary);
+
+        // 4. 相似度矩阵摘要（取前10个商品的相似商品）
+        Map<String, List<Map<String, Object>>> similaritySummary = new LinkedHashMap<>();
+        itemSimilarityMatrix.entrySet().stream().limit(10).forEach(entry -> {
+            List<Map<String, Object>> similarItems = entry.getValue().entrySet().stream()
+                    .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
+                    .limit(5)
+                    .map(e -> {
+                        Map<String, Object> item = new LinkedHashMap<>();
+                        item.put("商品ID", e.getKey());
+                        item.put("相似度", Math.round(e.getValue() * 10000.0) / 10000.0);
+                        return item;
+                    })
+                    .collect(Collectors.toList());
+            similaritySummary.put("商品" + entry.getKey() + "的相似商品", similarItems);
+        });
+        debug.put("similarityMatrix", similaritySummary);
+
+        return debug;
+    }
+
+    /**
      * 获取用户的推荐画像
      *
      * @param userId 用户 ID
      * @return 用户画像
      */
     public UserProfileDTO getUserProfile(Long userId) {
-        return userProfileCache.computeIfAbsent(userId, this::buildUserProfile);
+        if (userId == null) {
+            return null;
+        }
+
+        long now = System.currentTimeMillis();
+        CachedUserProfile cached = userProfileCache.get(userId);
+        if (cached != null && !isUserProfileCacheExpired(cached, now)) {
+            return cached.profile;
+        }
+
+        UserProfileDTO profile = buildUserProfile(userId);
+        userProfileCache.put(userId, new CachedUserProfile(profile, now));
+        return profile;
+    }
+
+    private boolean isUserProfileCacheExpired(CachedUserProfile cached, long now) {
+        Long expireSeconds = recommendationConfig.getUserProfileCacheExpireSeconds();
+        if (expireSeconds == null || expireSeconds <= 0) {
+            return true;
+        }
+        return now - cached.cachedAtMillis >= expireSeconds * 1000L;
     }
 
     /**
@@ -505,6 +600,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
         itemSimilarityMatrix.clear();
 
         // 1. 加载购买行为（订单状态为已完成）
+        // 只有已完成订单代表真实成交，因此购买行为权重最高。
         LambdaQueryWrapper<Order> orderWrapper = new LambdaQueryWrapper<>();
         orderWrapper.eq(Order::getStatus, 3); // 已完成订单
         List<Order> orders = orderMapper.selectList(orderWrapper);
@@ -520,6 +616,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
         log.info("[交互矩阵] 购买行为: {}条（权重={}）", purchaseCount, recommendationConfig.getPurchaseWeight());
 
         // 2. 加载收藏行为
+        // 收藏代表用户明确表达兴趣，但弱于加购和购买。
         LambdaQueryWrapper<Favorite> favoriteWrapper = new LambdaQueryWrapper<>();
         favoriteWrapper.eq(Favorite::getStatus, 1); // 有效收藏
         List<Favorite> favorites = favoriteMapper.selectList(favoriteWrapper);
@@ -535,6 +632,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
         log.info("[交互矩阵] 收藏行为: {}条（权重={}）", favoriteCount, recommendationConfig.getFavoriteWeight());
 
         // 3. 加载购物车行为
+        // 加购通常表示更强的购买意愿，因此权重大于收藏。
         LambdaQueryWrapper<Cart> cartWrapper = new LambdaQueryWrapper<>();
         List<Cart> carts = cartMapper.selectList(cartWrapper);
         int cartCount = 0;
@@ -549,6 +647,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
         log.info("[交互矩阵] 加购行为: {}条（权重={}）", cartCount, recommendationConfig.getCartWeight());
 
         // 4. 加载浏览（点击）行为（来自推荐埋点记录）
+        // 点击信号较弱，需要结合停留时长和去重规则过滤偶然点击。
         // 规则：①停留时长 < 5秒的不计入 ②同一用户同一商品1分钟内的重复点击去重 ③封顶权重
         LambdaQueryWrapper<RecommendAction> clickWrapper = new LambdaQueryWrapper<>();
         clickWrapper.eq(RecommendAction::getActionType, "CLICK")
@@ -600,6 +699,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
                 filteredByDuration, filteredByDedup);
 
         // 5. 加载评分行为（评分作为双向信号：高分正向，低分负向）
+        // 评分不是简单加分：3星中性，4/5星正向，1/2星负向。
         // 公式：reviewWeight = (rating - 3) × reviewWeightBase
         //   5星 → +2 × base, 4星 → +1 × base, 3星 → 0, 2星 → -1 × base, 1星 → -2 × base
         // 同时，若用户购买后打了低分（≤2星），降低该订单的购买权重
@@ -1155,6 +1255,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
         List<Product> allProducts = productMapper.selectList(productWrapper);
 
         // 3. 对每个未交互商品计算 CF 得分
+        // 已交互商品只用于推断兴趣，不作为候选，避免首页反复推荐用户已经关注的商品。
         Map<Long, Double> cfScores = new HashMap<>();
         int skippedInteracted = 0;
         for (Product product : allProducts) {
@@ -1162,6 +1263,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
                 skippedInteracted++;
                 continue; // 跳过已交互商品（已购买/收藏等，无需重复推荐）
             }
+            // CF 得分由“候选商品与历史交互商品的相似度”加权得到。
             double cfScore = algorithmSupport.computeCfScore(product.getId(), userInteractions, itemSimilarityMatrix);
             cfScores.put(product.getId(), cfScore);
         }
@@ -1188,13 +1290,15 @@ public class FusionRecommendationService implements RecommendationStrategy {
 
             ProductProfileDTO productProfile = getProductProfile(product.getId());
             Double cfScore = normalizedCfScores.getOrDefault(product.getId(), 0.0);
+            // 画像得分根据农资属性计算：种子看地区/季节，农药化肥看作物，饲料兽药看动物。
             Double profileScore = computeProfileMatchScore(userProfile, productProfile, currentSeason);
 
             if (profileScore == 0.0) {
                 filteredByProfile++;
             }
 
-            // 线性融合：finalScore = θ × CF得分 + (1-θ) × 画像得分
+            // 线性融合：finalScore = θ × CF得分 + (1-θ) × 画像得分。
+            // 画像不匹配时通常是降低排序权重，不是直接删除候选商品。
             double finalScore = algorithmSupport.computeFusionScore(theta, cfScore, profileScore);
             items.add(new RecommendedItem(product.getId(), cfScore, profileScore, finalScore));
         }
@@ -1533,7 +1637,7 @@ public class FusionRecommendationService implements RecommendationStrategy {
         double highThreshold = recommendationConfig.getCfHighScoreThreshold();
         double midThreshold = recommendationConfig.getCfMediumScoreThreshold();
 
-        if (item.getCfScore() > highThreshold) {
+        if (item.getCfScore() > midThreshold) {
             return "与您浏览/购买的商品相似";
         } else if (item.getProfileScore() > highThreshold) {
             return "符合您的地域和作物偏好";

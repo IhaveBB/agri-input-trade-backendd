@@ -16,8 +16,7 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 /**
  * Redis 配置类
- * 注：项目使用 Caffeine 作为 Spring Cache 的缓存管理器（见 CacheConfig.java）
- * Redis 用于分布式缓存和手动缓存操作（通过 RedisTemplate）
+ * Redis 用于 Spring Cache 缓存和手动缓存操作（通过 RedisTemplate）
  *
  * @author IhaveBB
  * @date 2026/03/20

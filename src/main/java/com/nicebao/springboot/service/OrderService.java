@@ -71,6 +71,9 @@ public class OrderService {
     @Autowired
     private RedisUtil redisUtil;
 
+    @Autowired
+    private FusionRecommendationService fusionRecommendationService;
+
 
 
     /**
@@ -143,6 +146,9 @@ public class OrderService {
         }
 
         Integer oldStatus = order.getStatus();
+        boolean wasCompleted = Integer.valueOf(3).equals(oldStatus);
+        boolean willBeCompleted = Integer.valueOf(3).equals(status);
+        boolean completedPurchaseChanged = wasCompleted != willBeCompleted;
         if (status == 4 && oldStatus != 0) {
             throw new BusinessException(ErrorCodeEnum.ORDER_STATUS_INVALID, "只有待支付订单可以取消");
         }
@@ -164,7 +170,7 @@ public class OrderService {
         }
 
         // 订单完成时增加商品销量 + 自动生成出库记录
-        if (status == 3 && oldStatus != 3) {
+        if (willBeCompleted && !wasCompleted) {
             productMapper.increaseSalesCount(order.getProductId(), order.getQuantity());
             LOGGER.info("订单完成，商品销量+{}，商品ID：{}", order.getQuantity(), order.getProductId());
 
@@ -188,6 +194,11 @@ public class OrderService {
         }
 
         syncLogisticsOnStatusChange(id, status);
+
+        if (completedPurchaseChanged) {
+            // 用户画像只统计已完成订单，订单进入或退出完成状态都需要重新构建画像。
+            fusionRecommendationService.invalidateUserProfile(order.getUserId());
+        }
 
         LOGGER.info("更新订单状态成功，订单ID：{}，新状态：{}", id, status);
         return order;
