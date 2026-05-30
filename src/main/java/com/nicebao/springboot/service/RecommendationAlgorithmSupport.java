@@ -181,13 +181,25 @@ public class RecommendationAlgorithmSupport {
         return productNorms;
     }
 
+    /**
+     * 计算两个商品在所有用户行为上的余弦相似度。
+     *
+     * @param productId1 第一个商品ID，例如“牛肝菌”
+     * @param productId2 第二个商品ID，例如“黑松露”
+     * @param productNorms 每个商品向量的长度，key为商品ID，value为sqrt(所有用户对该商品交互强度平方和)
+     * @param userInteractionMatrix 用户-商品交互矩阵，结构为：用户ID -> 商品ID -> 交互强度
+     * @return 两个商品的相似度，范围通常为0~1；值越大，说明两个商品越常被同一批用户共同交互
+     */
     private double computeCosineSimilarity(Long productId1,
                                            Long productId2,
                                            Map<Long, Double> productNorms,
                                            Map<Long, Map<Long, Double>> userInteractionMatrix) {
         double numerator = 0.0;
+        // 遍历每个用户的交互记录，找出同时交互过 productId1 和 productId2 的用户。
         for (Map<Long, Double> userInteractions : userInteractionMatrix.values()) {
+            // weight1 表示当前用户对第一个商品的交互强度，例如购买=5、加购=3。
             Double weight1 = userInteractions.get(productId1);
+            // weight2 表示当前用户对第二个商品的交互强度。
             Double weight2 = userInteractions.get(productId2);
             if (weight1 != null && weight2 != null) {
                 // 只有同一个用户同时交互过两个商品时，才会对这两个商品的相似度产生贡献。
@@ -195,8 +207,10 @@ public class RecommendationAlgorithmSupport {
             }
         }
 
+        // 分母为两个商品向量长度的乘积，用于归一化，避免热门商品只因交互多就相似度偏高。
         double denominator = productNorms.getOrDefault(productId1, 0.0)
                 * productNorms.getOrDefault(productId2, 0.0);
+        // 余弦相似度 = 点积 / (向量1长度 * 向量2长度)；分母为0说明缺少有效交互，返回0。
         return denominator > 0 ? numerator / denominator : 0.0;
     }
 
