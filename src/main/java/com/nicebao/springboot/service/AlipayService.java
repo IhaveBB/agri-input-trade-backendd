@@ -20,6 +20,7 @@ import com.nicebao.springboot.mapper.RechargeRecordMapper;
 import com.nicebao.springboot.mapper.BalanceRecordMapper;
 import com.nicebao.springboot.mapper.UserMapper;
 import com.nicebao.springboot.util.RedisUtil;
+import com.nicebao.springboot.util.UserContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -106,6 +107,11 @@ public class AlipayService {
         Order order = orderMapper.selectById(orderId);
         if (order == null) {
             throw new BusinessException(ErrorCodeEnum.ORDER_NOT_FOUND);
+        }
+
+        Long currentUserId = UserContext.getUserId();
+        if (!order.getUserId().equals(currentUserId) && !UserContext.isAdmin()) {
+            throw new BusinessException(ErrorCodeEnum.FORBIDDEN, "无权限支付他人订单");
         }
 
         // 检查订单状态，只允许待支付订单发起支付

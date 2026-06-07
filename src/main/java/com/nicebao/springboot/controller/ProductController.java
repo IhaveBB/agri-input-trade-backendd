@@ -179,7 +179,7 @@ public class ProductController {
 
     /**
      * 删除商品
-     * 权限：只有管理员
+     * 权限：商户只能删除自己的商品
      *
      * @param id 商品ID
      * @return 操作结果
@@ -187,7 +187,7 @@ public class ProductController {
      * @date 2026/03/19
      */
     @Operation(summary = "删除商品")
-    @RequiresRole("USER")
+    @RequiresRole("MERCHANT")
     @DeleteMapping("/{id}")
     public Result<Void> deleteProduct(@PathVariable Long id) {
         Long userId = UserContext.getUserId();
@@ -308,7 +308,7 @@ public class ProductController {
 
     /**
      * 批量删除商品
-     * 权限：只有管理员
+     * 权限：商户只能删除自己的商品
      *
      * @param ids 商品ID列表
      * @return 操作结果
@@ -316,7 +316,7 @@ public class ProductController {
      * @date 2026/03/19
      */
     @Operation(summary = "批量删除商品")
-    @RequiresRole("USER")
+    @RequiresRole("MERCHANT")
     @DeleteMapping("/batch")
     public Result<Void> deleteBatch(@RequestParam List<Long> ids) {
         Long userId = UserContext.getUserId();

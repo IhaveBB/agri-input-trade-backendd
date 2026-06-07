@@ -215,7 +215,20 @@ public class RecommendationAlgorithmSupport {
     }
 
     /**
-     * 根据目标商品与用户历史交互商品的相似度计算 CF 预测得分。
+     * 根据候选商品与用户历史交互商品的相似度，计算该候选商品对当前用户的 CF 推荐得分。
+     *
+     * <p>这里使用的是基于物品的协同过滤（Item-CF）：先知道商品和商品之间的相似度，
+     * 再看候选商品与用户曾经买过/收藏/加购/浏览过的商品有多相似。越相似，并且用户
+     * 对历史商品的交互越强，该候选商品的 CF 得分就越高。</p>
+     *
+     * <p>公式可以理解为：
+     * CFScore(u,i)=Σ(sim(i,j) * r(u,j)) / Σ|sim(i,j)|，
+     * 其中 i 是候选商品，j 是用户历史交互商品，r(u,j) 是用户 u 对商品 j 的交互强度。</p>
+     *
+     * @param targetProductId 候选商品ID，即当前正在计算“是否要推荐给用户”的商品
+     * @param userInteractions 当前用户的历史交互记录，结构为：历史商品ID -> 交互强度
+     * @param itemSimilarityMatrix 商品相似度矩阵，结构为：商品ID -> 相似商品ID -> 相似度
+     * @return 候选商品的协同过滤原始得分；如果没有可用相似度或用户无历史行为，返回0
      */
     public double computeCfScore(Long targetProductId,
                                  Map<Long, Double> userInteractions,
@@ -223,6 +236,7 @@ public class RecommendationAlgorithmSupport {
         if (targetProductId == null || userInteractions == null || userInteractions.isEmpty()) {
             return 0.0;
         }
+        // 取出“候选商品”的相似商品列表，例如：黑松露 -> {牛肝菌:0.5, 水稻:0.8}
         Map<Long, Double> similarItems = itemSimilarityMatrix.get(targetProductId);
         if (similarItems == null || similarItems.isEmpty()) {
             return 0.0;
@@ -230,14 +244,20 @@ public class RecommendationAlgorithmSupport {
 
         double numerator = 0.0;
         double denominator = 0.0;
+        // 遍历候选商品的相似商品，判断这些相似商品是否出现在当前用户的历史行为中。
         for (Map.Entry<Long, Double> entry : similarItems.entrySet()) {
+            Double similarity = entry.getValue();
+            // 如果用户交互过这个相似商品，就取出用户对它的交互强度，例如购买=5、收藏=2。
             Double interactionStrength = userInteractions.get(entry.getKey());
             if (interactionStrength != null) {
                 // 候选商品与用户历史商品越相似，且用户对历史商品交互越强，CF 得分越高。
-                numerator += entry.getValue() * interactionStrength;
-                denominator += Math.abs(entry.getValue());
+                // 分子累加：相似度 * 用户历史交互强度。
+                numerator += similarity * interactionStrength;
+                // 分母累加相似度，用于做加权平均，避免相似商品数量不同导致得分不可比。
+                denominator += Math.abs(similarity);
             }
         }
+        // 返回加权平均后的 CF 得分；分母为0说明候选商品和用户历史商品没有有效相似关系。
         return denominator > 0 ? numerator / denominator : 0.0;
     }
 
